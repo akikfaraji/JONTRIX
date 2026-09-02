@@ -80,3 +80,16 @@ Stage Summary:
 - WORKS (no bank/card): crypto affiliate USDT (Bybit/OKX/Binance, ~2% total via P2P→bKash = cheapest chain); Telegram Stars→Fragment→GRAM→USDT→P2P→bKash (~4-5%, 21-day hold, 1,000-Star/$13 min, $0.013/Star payout rate); AdsGram mini-app ads (USDT-TON, $100 min); Adsterra USDT-TRC20 ($100 min crypto — the famous $5 min is WebMoney/Paxum only, NOT crypto); Paddle→Payoneer→bKash (3%+$1, min BDT 1000, cap BDT 250k/tx — only mainstream SaaS checkout open to BD); NOWPayments (0.5-1.5%, 0% withdrawal) / BTCPay (free, BTC-only) as accept-payment rails; direct MTO remittance→bKash (WU/MoneyGram/ACE/Taptap, +2.5% govt incentive, 0.7% ATM cash-out — cheapest per-dollar but compliance grey area for client fees).
 - BROKEN: Google AdSense (BD = wire-to-bank only; WU Quick Cash dead), Stripe & PayPal (BD unsupported), Gumroad (needs BD bank or PayPal), Payhip/Ko-fi/BuyMeACoffee/Patreon/LemonSqueezy (Stripe/PayPal dependent), Payoneer→bank (no bank).
 - Biggest gotchas: crypto is a Bangladesh Bank grey zone (FERA 1947; real risk = MFS wallet freezes from many small P2P credits, not prosecution); Binance lists BD restricted (Mar 2025 stricter P2P KYC, Cash Zone closed) — prefer Bybit/OKX P2P (0% fee, bKash/Nagad/Rocket listed); Fragment KYC mandatory for purchases since Nov 2024, withdrawal-KYC reports mixed; USDT/BDT P2P rate 122-124 vs official 119.9 = +2-3.5% FX bonus; Toncoin renamed GRAM 1:1 (Jun 15, 2026); Telegram channel-ads 50% rev share (≥1k subs) NOT officially confirmed for BD — check in-app toggle, AdsGram is fallback.
+---
+Task ID: 3
+Agent: main (Super Z)
+Task: Export phase-1 research findings; developer-tooling stream deferred to next session.
+
+Work Log:
+- Verified all 6 research files intact after session restart (1828 lines total).
+- Read ai-providers.md + data-repair.md in full; confirmed row formats in all other files.
+- Assembled consolidated export: download/FRAZIYM_Research_Export_Phase1.md (1791 lines, all 6 streams + header/evidence legend).
+
+Stage Summary:
+- Phase-1 research corpus: 28 problems (data-repair) + 31 (ecom-smb) + 25 (distribution-weird) + 15 AI providers + 16 infra sections + 12 payment rails, all evidence-graded with URLs.
+- Next: developer tooling research (2-b), then synthesis -> 200+ problem XLSX + executive PDF.
