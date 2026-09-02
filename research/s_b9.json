@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://blog.codinghorror.com",
+    "name": "Regex use vs. Regex abuse",
+    "snippet": "Feb 16, 2005 — All developers should learn to use basic regular expressions , because they'll produce better, more flexible, more maintainable code with them. Read more",
+    "host_name": "blog.codinghorror.com",
+    "rank": 0,
+    "date": "Feb 16, 2005",
+    "favicon": ""
+  },
+  {
+    "url": "https://jhall.io",
+    "name": "Regular Expressions Are the Best! s/Best/Worst/ - Jonathan Hall",
+    "snippet": "Mar 5, 2022 — Regular expressions are confusing And this leads to the next big problem with regular expressions. They're hard to read.",
+    "host_name": "jhall.io",
+    "rank": 1,
+    "date": "Mar 5, 2022",
+    "favicon": ""
+  },
+  {
+    "url": "https://softwareengineering.stackexchange.com",
+    "name": "Why are regular expressions so morbidly attractive?",
+    "snippet": "Dec 21, 2010 — Locked. This question and its answers are locked because the question is off-topic but has historical significance. It is not currently accepting new answers ...",
+    "host_name": "softwareengineering.stackexchange.com",
+    "rank": 2,
+    "date": "Dec 21, 2010",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to",
+    "name": "Why Regular Expressions Are Super Powerful, But A",
+    "snippet": "May 14, 2021 — Parsing json, xml, or even html with regular expressions is a terrible idea. When abused and used in incorrect situations, they can lead to ...",
+    "host_name": "dev.to",
+    "rank": 3,
+    "date": "May 14, 2021",
+    "favicon": ""
+  },
+  {
+    "url": "https://news.ycombinator.com",
+    "name": "Why are regular expressions difficult?",
+    "snippet": "Jul 20, 2022 — People think regular expression s are difficult because they're taught either not at all, or very badly. If you learn them deliberately, moving ... Read more",
+    "host_name": "news.ycombinator.com",
+    "rank": 4,
+    "date": "Jul 20, 2022",
+    "favicon": ""
+  }
+]

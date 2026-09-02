@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://bigdataboutique.com/blog/mysql-to-postgresql-migration-practical-guide",
+    "name": "MySQL to PostgreSQL Migration: A Practical Guide for",
+    "snippet": "Apr 13, 2026 — A hands-on guide to migrating from MySQL to PostgreSQL , covering schema conversion , data type mapping, tooling choices like pgloader, ...",
+    "host_name": "bigdataboutique.com",
+    "rank": 0,
+    "date": "Apr 13, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/PostgreSQL/comments/1szqe85/i_built_a_free_browserbased_schema_diff_tool_for",
+    "name": "I built a free browser-based schema diff tool for",
+    "snippet": "So I built SchemaLens: a client-side schema diff tool that parses CREATE TABLE statements, shows you exactly what changed (tables, columns, ...",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dbconvert.com/blog/how-to-migrate-mysql-to-postgresql",
+    "name": "Migrate MySQL to PostgreSQL: Data Types & SQL Rewrites",
+    "snippet": "Jun 24, 2026 — A practical MySQL to PostgreSQL migration guide: data type mapping, SQL rewrites, stored-routine limits, validation, and low-downtime ...",
+    "host_name": "dbconvert.com",
+    "rank": 2,
+    "date": "Jun 24, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/92043/is-there-a-simple-tool-to-convert-mysql-to-postgresql-syntax",
+    "name": "Is there a simple tool to convert mysql to postgresql syntax?",
+    "snippet": "Closed. This question is seeking recommendations for software libraries, tutorials, tools, books, or other off-site resources. It does not meet Stack ...",
+    "host_name": "stackoverflow.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://wiki.postgresql.org/wiki/Converting_from_other_Databases_to_PostgreSQL",
+    "name": "Converting from other Databases to PostgreSQL",
+    "snippet": "Postgres Migration Toolkit Software pack to convert Oracle, MySQL, SQL Server and FoxPro to PostgreSQL, and vice versa. sqlacrossover SQLAlchemy-based cross- ...",
+    "host_name": "wiki.postgresql.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://severalnines.com/blog/migrating-mysql-postgresql-what-you-should-know",
+    "name": "Migrating from MySQL to PostgreSQL - What You Should",
+    "snippet": "May 4, 2022 — Pgloader is a tool written in Common Lisp that imports data from MySQL into PostgreSQL using the COPY command, and loads data, indexes, foreign ...",
+    "host_name": "severalnines.com",
+    "rank": 5,
+    "date": "May 4, 2022",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com/groups/postgres/posts/4040144029400144",
+    "name": "Migrating from MySQL to PostgreSQL recommendations?",
+    "snippet": "Hi freinds\nI want to migrate database from MySQL to PostgreSQL\nAny  recommendations please ?",
+    "host_name": "www.facebook.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.quora.com/What-is-the-best-tool-to-migrate-MySQL-to-PostgreSQL-preferably-a-free-tool",
+    "name": "What is the best tool to migrate MySQL to PostgreSQL",
+    "snippet": "What is the best tool to migrate MySQL to PostgreSQL (preferably a free tool)?",
+    "host_name": "www.quora.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]
