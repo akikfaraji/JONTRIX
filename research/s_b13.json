@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://jwt.io",
+    "name": "JSON Web Tokens - jwt.io",
+    "snippet": "JSON Web Token (JWT) Debugger . Decode, verify, and generate JSON Web Tokens, which are an open, industry standard RFC 7519 method for representing claims ... Read more",
+    "host_name": "jwt.io",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://token.dev",
+    "name": "JWT Debugger",
+    "snippet": "Encode or Decode JWTs. Paste a JWT and decode its header, payload, and signature, or provide header, payload, and signature information to generate a JWT . Read more",
+    "host_name": "token.dev",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://fusionauth.io/docs/dev-tools/jwt-decoder",
+    "name": "JWT Decoder | FusionAuth Docs",
+    "snippet": "Our online JWT decoder lets you examine the contents of any JWT by pasting it into the Token form field. It'll automatically decode the values and place the ... Read more",
+    "host_name": "fusionauth.io",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://jwt.is",
+    "name": "JSON Web Token (JWT) Debugging Tool (Next-Gen)",
+    "snippet": "JWT, or JSON Web Token, is a compact, URL-safe means of representing claims to be transferred between two parties. This JWT debugging tool is made to help ...",
+    "host_name": "jwt.is",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://supertokens.com/jwt-encoder-decoder",
+    "name": "JWT Decoder",
+    "snippet": "The JWT Decoder Tool allows you to decode JWTs for simple debugging . You can also create your own JWTs with custom payloads signed with your own secret for ... Read more",
+    "host_name": "supertokens.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://devutilitylab.com/jwt-decoder",
+    "name": "Free JWT Decoder & Debugger",
+    "snippet": "Decode JWT tokens instantly and inspect header, payload, expiration, and algorithms. Built for developers who need quick and secure token debugging. ⚡ Instant ... Read more",
+    "host_name": "devutilitylab.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.authgear.com/tools/jwt-jwe-debugger",
+    "name": "JWT & JWE Debugger — Decode, Verify, Encrypt & Decrypt",
+    "snippet": "Our JWT debugger helps you inspect JWT headers and claims, verify signatures, and convert tokens to/from encrypted JWE form.",
+    "host_name": "www.authgear.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://freetoolhub.org/jwt-decoder",
+    "name": "JWT Decoder / Debugger - FreeToolHub",
+    "snippet": "JWT Decoder is a free browser-based tool that decodes JWT tokens to inspect header and payload, no signup, no upload. tracking, no server, 100% in-browser.",
+    "host_name": "freetoolhub.org",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]

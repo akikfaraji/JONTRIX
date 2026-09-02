@@ -16,7 +16,7 @@ cat << 'HDR'
 4. Distribution + Weird Markets (2-g) — 25 pain rows, 10 distribution facts
 5. E-commerce + SMB Documents (2-c) — 31 problems, 14 facts
 6. Bangladesh Payment Rails (2-f) — 12-rail ledger, fee chains
-7. Developer Tooling (2-b) — ⏳ PENDING (next session)
+7. Developer Tooling (2-b) — 20 problems, 14 facts
 
 ---
 
@@ -55,5 +55,15 @@ echo ""
 echo "# SECTION 6 — BANGLADESH PAYMENT RAILS (Task 2-f)"
 echo ""
 cat research/payments.md
+} > "$OUT.tmp"
+{
+cat "$OUT.tmp"
+echo ""
+echo "---"
+echo ""
+echo "# SECTION 7 — DEVELOPER TOOLING (Task 2-b)"
+echo ""
+cat research/devtools.md
 } > "$OUT"
+rm -f "$OUT.tmp"
 wc -l "$OUT"

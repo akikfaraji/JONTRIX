@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://medium.com/@riccardo.tartaglia/5-essential-mcp-servers-every-developer-should-know-72e828cae18e",
+    "name": "5 Essential MCP Servers Every Developer Should Know - Medium",
+    "snippet": "Oct 11, 2025 · It removes friction from the development process. A developer's real story about debugging faster with context-aware coding tools and AI ...",
+    "host_name": "medium.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/modelcontextprotocol/comments/1s4r7fx/github_epistatesawesomemcpdevtools_a_curated_list",
+    "name": "Epistates/awesome-mcp-devtools: A curated list of developer tools",
+    "snippet": "Mar 27, 2026 · A curated list of developer tools, SDKs, libraries, and testing utilities for Model Context Protocol (MCP) server development. the tooling gap ...",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.improving.com/es-mx/thoughts/best-mcp-servers-for-software-developers-and-engineers",
+    "name": "Best MCP Servers for Software Developers and Engineers - Improving",
+    "snippet": "Dec 19, 2025 · MCP server is a small service that exposes actions, resources, or queries to AI using the Model Context Protocol. MCP is an open standard that ...",
+    "host_name": "www.improving.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/orgs/community/discussions/174921",
+    "name": "Model Context Protocol (MCP): Revolutionizing Developer  - GitHub",
+    "snippet": "Sep 26, 2025 · One practical gap I keep seeing in MCP developer workflows is not tool access itself, but durable proof of what the human/agent work session did ...",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://developer.chrome.com/blog/chrome-devtools-mcp",
+    "name": "Chrome DevTools (MCP) for your AI agent | Blog",
+    "snippet": "Sep 23, 2025 · The Model Context Protocol (MCP) is an open-source standard for connecting large language models (LLMs) to external tools and data sources.",
+    "host_name": "developer.chrome.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com/groups/openclawxhermes/posts/1344154731153775",
+    "name": "Model Context Protocol inspector for AI agent debugging - Facebook",
+    "snippet": "Jun 20, 2026 · The Model Context Protocol team built an official Inspector — a visual testing tool for MCP servers. Debug tool calls, inspect responses ...",
+    "host_name": "www.facebook.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.zenml.io/llmops-database/launching-an-mcp-server-for-ai-powered-debugging-and-development",
+    "name": "Launching an MCP Server for AI-Powered Debugging and  - ZenML",
+    "snippet": "Multiplayer, a provider of full-stack session recording and debugging tools, launched a Model Context Protocol (MCP) server to connect their platform's ...",
+    "host_name": "www.zenml.io",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.linkedin.com/posts/ashishpatel2604_80-of-developers-ignore-mcp-but-its-the-activity-7343518931195695106-qt3p",
+    "name": "How MCP can boost your AI projects by 50% - LinkedIn",
+    "snippet": "Jun 24, 2025 · Context Protocol (MCP) is changing how developers work with AI. These servers let different AI tools “talk” to each other — removing data silos ...",
+    "host_name": "www.linkedin.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]

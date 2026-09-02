@@ -93,3 +93,17 @@ Work Log:
 Stage Summary:
 - Phase-1 research corpus: 28 problems (data-repair) + 31 (ecom-smb) + 25 (distribution-weird) + 15 AI providers + 16 infra sections + 12 payment rails, all evidence-graded with URLs.
 - Next: developer tooling research (2-b), then synthesis -> 200+ problem XLSX + executive PDF.
+---
+Task ID: 4
+Agent: main (Super Z)
+Task: Developer tooling research (Task 2-b) — completed via direct atomic batch execution.
+
+Work Log:
+- 17 web searches total (6 pre-degradation + 11 via scripts/devtools_batch.sh atomic batch with retries).
+- Wrote research/devtools.md: 20 problem rows (B1-B20, 12 E1, 6 E2, 2 E3-labeled needing validation) + 14 verified pricing facts + cluster synthesis.
+- Regenerated download/FRAZIYM_Research_Export_Phase1.md including Section 7 (devtools).
+
+Stage Summary:
+- KEY FINDS: Postman free-tier gutting (Feb 2026) = timed migration-search window; SQL dialect conversion = paying high-stakes audience (rev-max candidate); large-JSON crash pain = client-side WASM wedge; MCP tooling gaps = early explosive upside; CORS pain = biggest traffic pool.
+- Downgrades recorded: tunnels (bandwidth cost), regex head-on (regex101 moat), JWT (saturated).
+- ALL 7 RESEARCH STREAMS NOW COMPLETE. Next: synthesis into 200+ problem database -> XLSX -> PDF.
