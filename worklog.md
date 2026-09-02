@@ -107,3 +107,54 @@ Stage Summary:
 - KEY FINDS: Postman free-tier gutting (Feb 2026) = timed migration-search window; SQL dialect conversion = paying high-stakes audience (rev-max candidate); large-JSON crash pain = client-side WASM wedge; MCP tooling gaps = early explosive upside; CORS pain = biggest traffic pool.
 - Downgrades recorded: tunnels (bandwidth cost), regex head-on (regex101 moat), JWT (saturated).
 - ALL 7 RESEARCH STREAMS NOW COMPLETE. Next: synthesis into 200+ problem database -> XLSX -> PDF.
+---
+Task ID: 5
+Agent: main (Super Z)
+Task: Record NEW STRATEGIC DIRECTIVE from founder + begin synthesis phase.
+
+Work Log:
+- Founder directive (verbatim intent): "This infrastructure the whole system will be one product. With many tools as many as we can so if a person needs a tool even if that tools has one use a month or less he gets it. And you should also plan the pricing and profit based on user plan or subscription and things plus not undersell or underprise any tools."
+- Decision locked: ONE PRODUCT, MANY TOOLS (mega-toolbox platform model):
+  (1) Tool count maximized — long-tail tools with <=1 use/month are INCLUDED (long-tail aggregation economics, not per-tool ROI);
+  (2) Pricing/profit planned per USER PLAN / SUBSCRIPTION TIERS, not per-tool sales;
+  (3) NO UNDERPRICING — value-anchored pricing: per-tool replacement cost (DocuClipper $49.95/mo, DataFeedWatch $59/mo, Postman $14/user/mo, iLovePDF/PDF class $4-12/mo) justifies bundle price at market-mid; free tier = hooks only, real work behind PRO.
+- Impact on synthesis: scoring now evaluates each tool's contribution to the PLATFORM (hook/glue/pro/ltv role + tier_fit) IN ADDITION to the fixed 10-dim weighted score (Demand 20/Pain 15/Freq 10/Automation 15/Monetization 10/Distribution 10/Competition 5/Infra 5/Ecosystem 5/Defensibility 5).
+- Impact on deliverables: XLSX gains tier_fit + platform_role columns; PDF restructured as "One Product, N Tools" subscription platform plan with pricing/profit tiers; revenue scenarios modeled on subscriber counts x tiers, not per-tool sales.
+
+Stage Summary:
+- Product model = subscription mega-toolbox. All downstream artifacts (opportunities DB, XLSX, charts, PDF) must follow this frame.
+
+---
+Task ID: 5-b
+Agent: main (Super Z)
+Task: Synthesis — build 200+ opportunity database with 10-dim weighted scoring under One-Product model.
+
+Work Log:
+- scripts/parse_research.py: parsed 4 problem streams (2 formats) -> research/base_rows.json (104 rows; DR-*/EC-*/DV-*/WG-* prefixes to avoid ID collisions; field aliases + combined EvidenceLevel|Frequency|Severity lines handled).
+- scripts/gen_catalog.py: 144 generated long-tail tool rows across 16 families (JSON/CSV/PDF/SUB/FIN/MKT/OPS/API/SQL/CFG/TXT/SEC/IMG/EDU/WG/TG) per "One Product, Many Tools" directive (even <=1 use/month tools included).
+- scripts/build_opportunities.py: 10-dim weighted scoring (Demand .20/Pain .15/Freq .10/Automation .15/Monetization .10/Distribution .10/Competition .05/Infra .05/Ecosystem .05/Defensibility .05) + ~85 curated overrides mapped after verifying base-row titles; platform_role (HOOK/GLUE/PRO/LTV) + tier_fit (FREE/PRO/MAX) per subscription model.
+- Output: research/opportunities.json = 247 rows x 38 fields (79 E1 / 15 E2 / 153 E3-inherited).
+
+Stage Summary:
+- TOP ROWS: DR-C3 Acrobat-subscription outrage 8.20 (= toolbox thesis evidence); DR-F1 bank-statement PDF->CSV 8.03 (flagship LTV); GT PDF-table-extractor 7.75; DR-D2 tool-stitching meta-pain 7.67 (= toolbox thesis); WG-G4 citation verifier 7.60; EC-C21 invoice matcher 7.58; DV-B1 large JSON 7.58; EC-C29 WhatsApp orders 7.55; DV-B10 SQL dialect 7.40.
+- Cluster averages: Data&Repair 6.87 > Ecom 6.44 > DevTools 6.23 > Telegram/BD 6.09 > WeirdGold 5.94 > Media 5.87 > Text 5.77.
+- Role mix: HOOK 53 / GLUE 97 / PRO 65 / LTV 32. Tier mix: FREE 155 / PRO 79 / MAX 13.
+- Next: XLSX -> charts -> executive PDF (all under One-Product-Many-Tools subscription frame).
+
+---
+Task ID: 6
+Agent: main (Super Z)
+Task: Produce and QA all final deliverables (XLSX + charts + executive PDF).
+
+Work Log:
+- XLSX: scripts/build_xlsx.py -> download/FRAZIYM_Opportunity_Database.xlsx (10 sheets: README, Opportunities 247 rows filterable w/ color scales + autofilter, Top 50, Clusters, Pricing Model, Revenue Scenarios w/ live formulas, Payment Rails, Free Infra, AI Providers, Review). QA: recalc 0 errors, audit 0, scan 0, validate exit 0; Review sheet ALL PASS (fixed 3 caught bugs: price-row offset, Clusters ref, scenario ref; zone taxonomy canon to 7 zones).
+- Charts: scripts/make_charts.py (top20_ranking, zone_stats, revenue_scenarios, pricing_value) + Playwright+CSS Layout C diagrams (ai_router, ecosystem_map) + 2 PDF-specific variants with enlarged fonts for A4 legibility. All visually verified zero-overlap, titles fixed after clipping check.
+- PDF: full skill chain read (report.md + fonts.md + cover.md + overflow/pagination/typography/palette/charts/fill-engine). Cover = Template 07 Crystal Blue (html2poster.js, cover_validate PASS). Body = ReportLab TocDocTemplate multiBuild, FreeSerif 10.5pt, roman TOC + arabic body numbering, safe tables (Paragraph-wrapped, proportional widths), 6 embedded figures, 48 numbered references. Fixes during QA: font paths (variable NotoSansSC skipped), cover page-size normalize (<0.1pt tolerance), em-dash line-start binding, T_weird ID column width. Final: pdf_qa --skip-cover = PASS all checks, font.check 0, toc.check clean.
+
+Stage Summary:
+- FINAL DELIVERABLES in /home/z/my-project/download/:
+  1. FRAZIYM_Executive_Report.pdf (22 pages, 18 sections, One-Product-Many-Tools subscription model, 4-tier pricing $0/$4.99/$9.99/$19.99, 5 revenue scenarios, 90-day roadmap, brutal-honesty verdict, 48 refs)
+  2. FRAZIYM_Opportunity_Database.xlsx (10 sheets, 247 scored rows)
+  3. charts/ (8 PNGs)
+  4. FRAZIYM_Research_Export_Phase1.md (2,106 lines, 7 streams)
+- MISSION COMPLETE.
