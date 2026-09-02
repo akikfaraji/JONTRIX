@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://onlineornot.com/cron-jobs/crontab/every-fifteen-minutes",
+    "name": "Cron Every 15 Minutes - Cron Expression Generator - OnlineOrNot",
+    "snippet": "Cron expression to run every 15 minutes. This expression will run every 15 minutes \"*/15\" in the minute field would indicate \"every 15 minutes\".",
+    "host_name": "onlineornot.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/13782749/writing-a-cron-expression-to-execute-every-15-minutes",
+    "name": "Writing a cron expression to execute every 15 minutes",
+    "snippet": "Dec 8, 2012 · I am trying to setup a cron job to run the garbage collector every 15 minutes on my session directory to clean up sessions that are beyond the ... cron expression every 15 minutes starting at 00:15 to 23:45 Cron Schedule to run every 15 minutes between certain datetimes More results from stackoverflow.com",
+    "host_name": "stackoverflow.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://crontab.guru/every-15-minutes",
+    "name": "Cron job every 15 minutes - Crontab.guru",
+    "snippet": "The quick and simple editor for cron schedule expressions by Cronitor. Cron job every 15 minutes is a commonly used cron schedule. tracks every job execution, ...",
+    "host_name": "crontab.guru",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://serverfault.com/questions/141031/cron-how-can-i-create-a-cronjob-that-runs-every-15-seconds",
+    "name": "Cron - How can I create a cronjob that runs every 15 seconds?",
+    "snippet": "May 11, 2010 · Cron doesn't support a seconds interval. You need to write a shell script like this that sleeps on the specified interval and schedule that to ...",
+    "host_name": "serverfault.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.beekeeperstudio.io/tools/cron-generator/examples/cron-every-15-minutes",
+    "name": "Cron Expression: Cron Every 15 Minutes | Beekeeper Studio",
+    "snippet": "Learn how to create a cron expression for 'cron every 15 minutes'. Runs every 15 minutes with our free cron generator tool. Open your crontab with crontab -e",
+    "host_name": "www.beekeeperstudio.io",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://uptimerobot.com/knowledge-hub/monitoring/cron-jobs",
+    "name": "How to Run Cron Jobs Every 5, 10, 15, or 30 Minutes - UptimeRobot",
+    "snippet": "Set the expected interval slightly longer than the cron schedule. For example, a job that runs every 15 minutes should alert after 20–25 minutes of silence. What is a crontab? · How to run cron jobs · Practical examples of cron jobs",
+    "host_name": "uptimerobot.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.experts-exchange.com/questions/23306548/Cronjob-every-15-seconds.html",
+    "name": "Solved: Cronjob every 15 seconds - Experts Exchange",
+    "snippet": "Apr 8, 2008 · I'm realtivley new to cron, but I need to make cron jobs that run every 15 seconds. I also need to create a cron job that runs every minute (but ...",
+    "host_name": "www.experts-exchange.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://jasperbernaers.com/cron",
+    "name": "Cron Expression Explainer — Plain English | jasperbernaers.com",
+    "snippet": "*/15 every 15 minutes . */15 in the minute field means every fifteenth minute starting at 0 — so :00, :15, :30 and :45. minute 0, 10, 20 and 30 only. Every- ...",
+    "host_name": "jasperbernaers.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]
