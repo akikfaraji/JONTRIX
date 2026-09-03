@@ -17,12 +17,27 @@ export interface QuotaBlock {
   resets_at: string;
 }
 
+export interface EnvelopeOptions {
+  warnings?: string[];
+  quota?: QuotaBlock;
+  init?: ResponseInit;
+}
+
 function meta(): EnvelopeMeta {
   return { request_id: crypto.randomUUID(), version: VERSION, ts: Date.now() };
 }
 
-export function ok(data: unknown, init?: ResponseInit): Response {
-  return Response.json({ ok: true, data, meta: meta() }, init);
+export function ok(data: unknown, opts?: EnvelopeOptions): Response {
+  return Response.json(
+    {
+      ok: true,
+      data,
+      ...(opts?.warnings ? { warnings: opts.warnings } : {}),
+      ...(opts?.quota ? { quota: opts.quota } : {}),
+      meta: meta(),
+    },
+    opts?.init,
+  );
 }
 
 export function fail(

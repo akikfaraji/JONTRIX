@@ -63,7 +63,10 @@ model User {
   createdAt         DateTime  @default(now())
   lastSeenAt        DateTime?
 
-  entitlement Entitlement?
+  entitlement    Entitlement?
+  authIdentities AuthIdentity[]
+
+  @@index([status])
 }
 
 // VOL-04 §3 `auth_identities` — Telegram / email identity links.
@@ -74,6 +77,8 @@ model AuthIdentity {
   providerUid String // telegram id or normalized email
   metaJson    String?
   createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 
   @@unique([provider, providerUid])
   @@index([userId])
@@ -326,4 +331,17 @@ model McpIdempotency {
 model Meta {
   key   String @id
   value String
+}
+
+// ─── VOL-04 §6 KV STATE (D-07 realization) ─────────────────────────────────
+// The spec's KV STATE namespace (OAuth/OTP one-time states, TTL <= 10 min)
+// realized as a table until a KV deployment target is chosen (D-07).
+// Cross-route shared state in Next.js requires a store outside module
+// memory — SQLite is the one shared store in this build environment.
+model KvState {
+  key       String   @id
+  value     String
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

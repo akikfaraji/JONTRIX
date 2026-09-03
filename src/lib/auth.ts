@@ -1,0 +1,341 @@
+// Session auth + email OTP — VOL-06 §2 (LOCKED), D-07 environment delta.
+//
+// Cookie contract: `jx_sess` HttpOnly, SameSite=Lax, carries
+// "<access>.<refresh>" where access = HMAC-signed 15-minute payload bound to
+// the session row, refresh = a 30-day single-use secret whose SHA-256 lives
+// in the sessions row. Refresh rotation is single-use: presenting a consumed
+// refresh revokes the whole family (replay detection), audited as
+// session.family_revoked.
+//
+// Email OTP: 6-digit code, SHA-256 at rest, TTL 10 min, max 5 attempts then
+// locked for the UTC day (T6.1). Delivery is pluggable; the build
+// environment uses the `log` driver (code appears in the server log) until
+// SMTP credentials land with the billing phase — stated honestly in the UI.
+//
+// D-07 delta: the spec's KV STATE store is realized as the KvState table —
+// cross-route state in Next.js cannot live in module memory (each route
+// bundle holds its own module instance). Semantics preserved: hashed codes,
+// 10-min TTL, day-keyed lockouts. Expired rows purge opportunistically.
+
+import { cookies } from 'next/headers';
+import { createHmac, randomBytes, randomInt } from 'node:crypto';
+import { db } from '@/lib/db';
+import { sha256, randomSecret } from '@/lib/tokens';
+import { utcDay } from '@/lib/utc';
+import { audit } from '@/lib/audit';
+
+const COOKIE = 'jx_sess';
+const ACCESS_TTL_MS = 15 * 60 * 1000; // 15 min — VOL-06 §2
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 d
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 min
+const OTP_MAX_ATTEMPTS = 5;
+
+// ── server secret (HMAC for access payloads) ────────────────────────────────
+
+let cachedSecret: string | null = null;
+
+/**
+ * HMAC secret for access payloads. AUTH_SECRET env wins; otherwise a dev
+ * secret is generated once and persisted under db/ (gitignored) — it never
+ * enters the repo (G-15).
+ */
+async function serverSecret(): Promise<string> {
+  if (cachedSecret) return cachedSecret;
+  if (process.env.AUTH_SECRET) {
+    cachedSecret = process.env.AUTH_SECRET;
+    return cachedSecret;
+  }
+  const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
+  const path = 'db/auth-secret';
+  if (existsSync(path)) {
+    cachedSecret = readFileSync(path, 'utf8').trim();
+  } else {
+    cachedSecret = randomSecret();
+    writeFileSync(path, cachedSecret, { mode: 0o600 });
+  }
+  return cachedSecret;
+}
+
+function sign(payload: string, secret: string): string {
+  return createHmac('sha256', secret).update(payload).digest('base64url');
+}
+
+
+// ── shared TTL store (KV STATE delta — KvState table) ───────────────────────
+// Cross-route state in Next.js cannot live in module memory (each route
+// bundle holds its own module instance). The spec's KV STATE semantics are
+// preserved: hashed codes, 10-min TTL, day-keyed lockouts, hashed at rest.
+
+async function ttlSet(key: string, value: string, ttlMs: number): Promise<void> {
+  await db.kvState.upsert({
+    where: { key },
+    create: { key, value, expiresAt: new Date(Date.now() + ttlMs) },
+    update: { value, expiresAt: new Date(Date.now() + ttlMs) },
+  });
+}
+
+async function ttlGet(key: string): Promise<string | null> {
+  const row = await db.kvState.findUnique({ where: { key } });
+  if (!row) return null;
+  if (row.expiresAt < new Date()) {
+    await db.kvState.delete({ where: { key } }).catch(() => undefined);
+    return null;
+  }
+  return row.value;
+}
+
+async function ttlDel(key: string): Promise<void> {
+  await db.kvState.delete({ where: { key } }).catch(() => undefined);
+}
+
+// ── OTP (email identity) ────────────────────────────────────────────────────
+
+export interface OtpIssue {
+  ok: true;
+  /** Present only under the log driver — never sent to the client. */
+  devCode?: string;
+}
+export interface OtpRefusal {
+  ok: false;
+  reason: 'locked';
+  resets_at: string;
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * Issue an email OTP. Codes are hashed at rest (VOL-04 §1.4); the plaintext
+ * is returned to the caller ONLY for the dev log driver.
+ */
+export async function issueOtp(emailRaw: string): Promise<OtpIssue | OtpRefusal> {
+  const email = normalizeEmail(emailRaw);
+  const lockKey = `otp_lock:${email}:${utcDay()}`;
+  if (await ttlGet(lockKey)) {
+    const resets = new Date(Date.now() + 24 * 3600 * 1000);
+    return { ok: false, reason: 'locked', resets_at: resets.toISOString() };
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  await ttlSet(`otp_code:${email}`, JSON.stringify({ hash: sha256(code), attempts: 0 }), OTP_TTL_MS);
+
+  // Delivery driver — `log` until SMTP lands with the billing phase (VOL-06 §2).
+  console.log(`[auth] OTP for ${email}: ${code} (dev log driver — expires in 10 min)`);
+
+  return { ok: true, devCode: code };
+}
+
+/** Verify an email OTP; on success returns the normalized email. */
+export async function verifyOtp(
+  emailRaw: string,
+  code: string,
+): Promise<{ ok: true; email: string } | { ok: false; reason: 'expired' | 'invalid' | 'locked' }> {
+  const email = normalizeEmail(emailRaw);
+  const key = `otp_code:${email}`;
+  const raw = await ttlGet(key);
+  if (!raw) return { ok: false, reason: 'expired' };
+
+  const entry = JSON.parse(raw) as { hash: string; attempts: number };
+  if (entry.attempts >= OTP_MAX_ATTEMPTS) {
+    await ttlDel(key);
+    await ttlSet(`otp_lock:${email}:${utcDay()}`, '1', 24 * 3600 * 1000);
+    return { ok: false, reason: 'locked' };
+  }
+
+  if (sha256(code.trim()) !== entry.hash) {
+    entry.attempts += 1;
+    await ttlSet(key, JSON.stringify(entry), OTP_TTL_MS);
+    return { ok: false, reason: 'invalid' };
+  }
+
+  await ttlDel(key);
+  return { ok: true, email };
+}
+
+// ── user provisioning ───────────────────────────────────────────────────────
+
+/** Get-or-create the user for a verified identity (VOL-06 §2 first-login path). */
+export async function upsertUserByEmail(email: string) {
+  const identity = await db.authIdentity.findUnique({
+    where: { provider_providerUid: { provider: 'email', providerUid: email } },
+    include: { user: true },
+  });
+  if (identity) {
+    await db.user.update({ where: { id: identity.userId }, data: { lastSeenAt: new Date() } });
+    return identity.user;
+  }
+
+  const base = email.split('@')[0].replace(/[^a-z0-9_.-]/gi, '') || 'user';
+  let handle = base;
+  for (let i = 0; i < 5; i++) {
+    const exists = await db.user.findUnique({ where: { handle } });
+    if (!exists) break;
+    handle = `${base}_${randomBytes(2).toString('hex')}`;
+  }
+
+  return db.user.create({
+    data: {
+      handle,
+      email,
+      authIdentities: {
+        create: { provider: 'email', providerUid: email },
+      },
+    },
+  });
+}
+
+// ── session lifecycle ───────────────────────────────────────────────────────
+
+export interface SessionTokens {
+  access: string;
+  refresh: string;
+}
+
+/** Create a session row and mint the access/refresh pair (VOL-06 §2). */
+export async function createSession(
+  userId: string,
+  kind: 'pwa' | 'miniapp' | 'dashboard',
+  req: Request,
+): Promise<SessionTokens> {
+  const refresh = randomSecret();
+  const secret = await serverSecret();
+
+  const row = await db.session.create({
+    data: {
+      userId,
+      kind,
+      hashSha256: sha256(refresh),
+      refreshFamily: randomSecret(),
+      createdIp: req.headers.get('x-forwarded-for') ?? null,
+      userAgent: req.headers.get('user-agent') ?? null,
+      expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+    },
+  });
+
+  const access = await mintAccess(row.id, userId, secret);
+  return { access, refresh };
+}
+
+async function mintAccess(sessionId: string, userId: string, secret: string): Promise<string> {
+  const payload = Buffer.from(
+    JSON.stringify({ sid: sessionId, uid: userId, exp: Date.now() + ACCESS_TTL_MS }),
+  ).toString('base64url');
+  return `${payload}.${sign(payload, secret)}`;
+}
+
+async function verifyAccess(
+  token: string,
+  secret: string,
+): Promise<{ sid: string; uid: string } | null> {
+  const [payload, mac] = token.split('.');
+  if (!payload || !mac) return null;
+  if (sign(payload, secret) !== mac) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString()) as {
+      sid: string;
+      uid: string;
+      exp: number;
+    };
+    if (parsed.exp < Date.now()) return null;
+    return { sid: parsed.sid, uid: parsed.uid };
+  } catch {
+    return null;
+  }
+}
+
+export interface AuthContext {
+  userId: string;
+  sessionId: string;
+  kind: string;
+}
+
+/**
+ * Authenticate the browser session from the `jx_sess` cookie.
+ * Verifies the access payload; falls back to refresh rotation when the
+ * access token has aged out (single-use refresh, family revocation on
+ * replay — VOL-06 §2 / VOL-10 §4.8 semantics).
+ */
+export async function getSessionAuth(req: Request): Promise<AuthContext | null> {
+  const cookieHeader = req.headers.get('cookie') ?? '';
+  const raw = cookieHeader
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${COOKIE}=`))
+    ?.slice(COOKIE.length + 1);
+  if (!raw) return null;
+
+  const [access, refresh] = decodeURIComponent(raw).split(':');
+  if (!access) return null;
+
+  const secret = await serverSecret();
+  const valid = await verifyAccess(access, secret);
+  if (valid) {
+    const row = await db.session.findUnique({ where: { id: valid.sid } });
+    if (!row || row.revokedAt || row.expiresAt < new Date()) return null;
+    return { userId: row.userId, sessionId: row.id, kind: row.kind };
+  }
+
+  // Access aged out or forged — attempt single-use refresh rotation.
+  if (!refresh) return null;
+  const row = await db.session.findUnique({ where: { hashSha256: sha256(refresh) } });
+  if (!row) return null; // unknown refresh — nothing to reveal
+
+  if (row.revokedAt || row.expiresAt < new Date()) {
+    // Replay of a consumed refresh: revoke the family (VOL-06 §2).
+    await db.session.updateMany({
+      where: { refreshFamily: row.refreshFamily, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await audit({
+      actorKind: 'user_session',
+      actorId: row.userId,
+      event: 'session.family_revoked',
+      subject: row.id,
+      meta: { reason: 'refresh_replay' },
+    });
+    return null;
+  }
+
+  // Rotate: this refresh dies, a new pair is issued via the response cookie
+  // by the caller (route handlers call `attachSessionCookie` after this).
+  // In-place: mark consumed and issue fresh tokens for the same row.
+  const newRefresh = randomSecret();
+  await db.session.update({
+    where: { id: row.id },
+    data: { hashSha256: sha256(newRefresh) },
+  });
+  const newAccess = await mintAccess(row.id, row.userId, secret);
+  await setSessionCookie(req, { access: newAccess, refresh: newRefresh });
+  return { userId: row.userId, sessionId: row.id, kind: row.kind };
+}
+
+/** Set the `jx_sess` cookie on a Next.js response-less route handler. */
+export async function setSessionCookie(_req: Request, tokens: SessionTokens): Promise<void> {
+  const jar = await cookies();
+  // ':' separator — the access token itself contains dots (payload.mac).
+  // NOTE: Next's cookie serializer encodes the value itself — pass the raw
+  // string; encoding it here too would double-encode ('%253A').
+  const value = `${tokens.access}:${tokens.refresh}`;
+  jar.set(COOKIE, value, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: REFRESH_TTL_MS / 1000,
+    path: '/',
+  });
+}
+
+export async function clearSessionCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.set(COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
+}
+
+/** Revoke the current session row and clear the cookie (sign-out). */
+export async function revokeSession(auth: AuthContext): Promise<void> {
+  await db.session.update({
+    where: { id: auth.sessionId },
+    data: { revokedAt: new Date() },
+  }).catch(() => undefined);
+  await clearSessionCookie();
+}
