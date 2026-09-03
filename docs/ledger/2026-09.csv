@@ -1,0 +1,2 @@
+event_id,date_utc,kind,rail,gross,fee,net,currency,hold_days,ref,note
+cost_domain_2026-09,2026-09-15,cost.domain,card,12.00,0.00,12.00,USD,0,invoice:domain-renewal,C1: only guaranteed recurring infra cost

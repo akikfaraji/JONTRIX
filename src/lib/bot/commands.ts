@@ -1,7 +1,7 @@
 // Bot command handlers — VOL-08 §1 (LOCKED command set). Anything unknown
 // → one-line help, never a menu maze. Proactive messages are limited to
 // receipts + reminders + opted-in digest (§4) — handlers here only ever
-// reply; nothing broadcasts.
+// reply; nothing is ever sent outside a reply to an update.
 
 import { db } from '@/lib/db';
 import { upsertUserByTelegram } from '@/lib/telegram';
