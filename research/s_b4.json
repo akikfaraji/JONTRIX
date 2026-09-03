@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://www.facebook.com/groups/132728896890594/posts/2829294820567308",
+    "name": "So much time wasted debugging",
+    "snippet": "So much time wasted debugging…",
+    "host_name": "www.facebook.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/sysadmin/comments/mwuv5k/enough_with_devs_who_dont_read_their_error",
+    "name": "Enough with devs who don't read their error messages",
+    "snippet": "Recently had developers escalate an issue to me after an 8 hour outage. The software they've developed couldn't connect to remote API . I just ... Read more",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.quora.com/Which-is-better-code-that-only-returns-cryptic-error-messages-or-code-that-runs-3x-slower-but-actually-returns-helpful-error-messages",
+    "name": "Which is better, code that only returns cryptic error",
+    "snippet": "Which is better, code that only returns cryptic error messages or code that runs 3x slower but actually returns helpful error messages?",
+    "host_name": "www.quora.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://community.postman.com/t/error-handling-and-debugging-tips-for-complex-api-calls/66163",
+    "name": "Error Handling and Debugging Tips for Complex API Calls",
+    "snippet": "Aug 14, 2024 — I need some advice on handling complex API calls and error management in Postman. I am currently working on a project that involves interacting ... Read more",
+    "host_name": "community.postman.com",
+    "rank": 3,
+    "date": "Aug 14, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/rohit_gavali_0c2ad84fe4e0/how-production-logs-forced-me-to-simplify-api-error-handling-388f",
+    "name": "How Production Logs Forced Me to Simplify API Error",
+    "snippet": "Jan 16, 2026 — At 3 AM on a Tuesday, our API threw an error that took me forty-five minutes to understand from the logs alone. Not because the error was ... Read more",
+    "host_name": "dev.to",
+    "rank": 4,
+    "date": "Jan 16, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@coders.stop/error-messages-from-hell-25-cryptic-warnings-that-left-developers-in-tears-a87c0c8f2082",
+    "name": "Error Messages From Hell: 25 Cryptic Warnings That Left",
+    "snippet": "The solution was adding a simple base case check, but finding where to add it took an entire day of logging and binary search through the code . Read more",
+    "host_name": "medium.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.gravitee.io/blog/debugging-best-practices-scalable-error-free-apis",
+    "name": "Debugging Best Practices for Scalable and Error-Free APIs",
+    "snippet": "Feb 3, 2025 — Fix API issues fast with smart debugging . Learn how to find bugs, use breakpoints, and test in prod-like environments for faster, ...",
+    "host_name": "www.gravitee.io",
+    "rank": 6,
+    "date": "Feb 3, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://temporal.io/blog/error-message-design",
+    "name": "Write errors that don't make me think",
+    "snippet": "Nov 19, 2020 — all a cryptic error message does is confirm your suspicion and tell you that you're gonna need to read through a bunch of code to figure out ...",
+    "host_name": "temporal.io",
+    "rank": 7,
+    "date": "Nov 19, 2020",
+    "favicon": ""
+  }
+]

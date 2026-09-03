@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://reqbin.com",
+    "name": "Online API Testing Tool | Test Your API Online",
+    "snippet": "3 days ago — It's free: send API requests right now , without creating an account or installing anything. ReqBin API test nodes are located in the US and EU, ...",
+    "host_name": "reqbin.com",
+    "rank": 0,
+    "date": "Aug 30, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://webhook.site",
+    "name": "Webhook.site - Test, transform and automate Web requests",
+    "snippet": "What is Webhook .site? Webhook.site generates free, unique URLs and e-mail addresses and lets you see everything that's sent there instantly.",
+    "host_name": "webhook.site",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://reqbin.com/premium",
+    "name": "ReqBin Premium Plan",
+    "snippet": "Increased rate and size limits . A higher request rate and larger payloads than the free plan. · Save unlimited projects. Keep every request in the cloud, ...",
+    "host_name": "reqbin.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://reqbin.com/rest-api-testing",
+    "name": "REST API Testing Tool",
+    "snippet": "Test REST API Online. Online REST API testing tool for API developers and testers. Test your RESTful API by making API calls directly from your browser.",
+    "host_name": "reqbin.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://reqbin.com/about",
+    "name": "About ReqBin",
+    "snippet": "ReqBin is an online API client and API testing tool for developers and testers. It was created by the HTTP Debugger team that has 15 years of experience in ...",
+    "host_name": "reqbin.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://webcatalog.io/en/apps/reqbin",
+    "name": "ReqBin - Desktop App for Mac & Windows",
+    "snippet": "ReqBin is a versatile tool designed to facilitate the testing and optimization of APIs and HTTP requests. It allows users to create, send, and analyze HTTP ...",
+    "host_name": "webcatalog.io",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://apidog.com/blog/what-is-reqbin",
+    "name": "What Is ReqBin? The Online API Client Explained",
+    "snippet": "Jun 29, 2026 — ReqBin is a free, browser-based API client for HTTP, REST, and SOAP. Learn its features, limits, and when teams outgrow a stateless tester.",
+    "host_name": "apidog.com",
+    "rank": 6,
+    "date": "Jun 29, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.webhook.site/index.html",
+    "name": "Webhook.site Docs: FAQ",
+    "snippet": "The default request history limit is 10.000 requests, emails or DNSHooks. If the value is set to 0, no request history is stored in the Webhook . site Cloud, but ...",
+    "host_name": "docs.webhook.site",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]

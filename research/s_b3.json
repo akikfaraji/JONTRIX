@@ -1,0 +1,38 @@
+[
+  {
+    "url": "https://www.reddit.com/r/reactjs/comments/11cyejn/what_is_cors_and_why_is_it_so_annoying",
+    "name": "What is CORS and why is it so annoying : r/reactjs",
+    "snippet": "Trying to create APIs and I've ran into 9 million bugs regarding cors. I googled it before but I don't quite understand it or why it appears as ...",
+    "host_name": "www.reddit.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/webdev/comments/1gyj8u7/i_hate_cors",
+    "name": "I hate CORS : r/webdev",
+    "snippet": "Put a load balancer/reverse proxy in front and use same domain . Makes dealing with cors and cookies much simpler. Literally just opt out and ...",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/webdev/comments/1o2cdzn/realizing_i_need_a_new_web_development_team",
+    "name": "Realizing i need a new web development team : r/webdev",
+    "snippet": "CORS error is masking something else. Look at a network trace or network tab in the dev tools and see what they actual response is. the fix ...",
+    "host_name": "www.reddit.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@stephen.biston/resolve-cors-errors-once-and-for-all-three-methods-d821c258d025",
+    "name": "Resolve CORS Errors Once and For All: Three Methods",
+    "snippet": "There are three simple approaches to resolving this issue. Make Your Domains (Origins) Match One of the most common patterns for resolving ...",
+    "host_name": "medium.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]

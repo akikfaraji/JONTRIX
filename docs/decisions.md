@@ -69,6 +69,18 @@ Governing-law venue: **Bangladesh** (default confirmed under the same directive;
 
 ---
 
+## D-07 — Build Stack Pivot + Design Language (founder directive, 2026-09-03)
+
+Recorded at build start ("The frontend should use next... The backend should also be made of nodejs the entire thing. Start."):
+
+1. **Frontend:** Next.js (App Router, TypeScript) with Tailwind + shadcn/ui.
+2. **Backend:** Node.js throughout — Next.js route handlers as the platform API in this phase; bot / MCP / gateway become standalone Node services in later phases. No other runtime.
+3. **npm-driven:** all workflows runnable with npm commands (`npm run dev`, `npm run db:push`, `npm run db:seed`, `npm run lint`).
+4. **Supersedes** the Cloudflare Workers/Pages/D1 layout of VOL-00 §0.4 and VOL-03's deploy topology for the build environment. VOL-04's schema is realized on SQLite via Prisma (column contracts preserved: integer cents/Stars, UTC, consent default-denied); the deployment target decision is deferred to a founder directive.
+5. **Design language (LOCKED):** clean, minimal, big-tech utility (Facebook/WhatsApp reference). Light and dark themes, one restrained accent. **No neon, no gradients, no emoji** — lucide icons only. The product must read as serious software, not a toy.
+
+---
+
 ## Housekeeping (2026-09-03)
 
 - **Workspace relocation:** all user-facing deliverables moved from `download/` to `jontrix/` (local mirror only — everything in it already lives in this repository as `spec/`, `deliverables/`, `research/`, `docs/`). `jontrix/` is git-ignored; the repository remains the canonical, complete copy.
