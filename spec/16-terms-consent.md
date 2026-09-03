@@ -3,7 +3,7 @@
 **Document:** JONTRIX Build Specification — VOL-16
 **Publisher:** Fraziym Soft
 **Version:** 1.0 (2026-09-03)
-**Status:** LOCKED structure and rules; legal prose hardened and reviewed in the founder-directed G-35 pass of 2026-09-03 (findings F-1..F-9 folded in; founder countersign line pending in `docs/decisions.md`)
+**Status:** LOCKED structure and rules; legal prose hardened, reviewed (G-35 pass, findings F-1..F-9) and **cleared for launch on 2026-09-03** by founder-directed closure (recorded in `docs/decisions.md`)
 **Depends on:** VOL-00 (C7, C8, D-03..D-06), VOL-04 §5 (consent_events, audit), VOL-05 §8 (consent endpoints), VOL-01 §5 (payment rails). Referenced by: VOL-07/08/09 (copy surfaces), VOL-14 (DoD), VOL-15 (ledger honesty).
 
 ---

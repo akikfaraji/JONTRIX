@@ -57,7 +57,7 @@ The build is complete only when `docs/dod-report.md` lists **every check as PASS
 - **G-26** Bot message universe = receipts + reminders + opted digest — nothing else (VOL-08 §4).
 - **G-21/G-34** Consent machinery end-to-end: default-denied, versioned re-ask, audit trail, export predicate (granted-only), withdrawal purge ≤ 30 days (VOL-16 §6).
 - **G-22/G-23** Consent endpoints + token factory + consent card verified in the UI (VOL-05 §6/§8, VOL-07 §6).
-- **G-35** Founder sign-off on the legal prose (terms/privacy/AUP) recorded in `docs/decisions.md` — launch-blocking. **Review pass 2026-09-03 complete:** 9 findings found and folded into VOL-16 (full record in `docs/decisions.md` §G-35); the flag clears when the founder appends the countersign line there.
+- **G-35** Founder sign-off on the legal prose (terms/privacy/AUP) recorded in `docs/decisions.md` — **CLEARED 2026-09-03:** review pass complete (9 findings folded into VOL-16) and founder-directed closure recorded in `docs/decisions.md` (findings accepted in-chat; venue: Bangladesh). No longer launch-blocking.
 - **G-36** Policy documents render from the versioned policy table, never from bundles (VOL-16 §10).
 
 ## §2 Per-Jont DoD (LOCKED format)

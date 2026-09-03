@@ -16,3 +16,6 @@ download/
 
 # Environment / secrets — never publish
 .env
+
+# Local deliverable mirror (content already lives in the repo)
+jontrix/
