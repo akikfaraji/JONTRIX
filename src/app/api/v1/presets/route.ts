@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       })),
       next_cursor: rows.length === PAGE ? rows[rows.length - 1].id : null,
     },
-    { warnings: patCheck.warnings },
+    { warnings: patCheck.snapshot.warnings },
   );
 }
 
@@ -116,7 +116,7 @@ export async function POST(req: Request) {
         created_at: row.createdAt.toISOString(),
       },
     },
-    { warnings: srvCheck.warnings, init: { status: 201 } },
+    { warnings: srvCheck.snapshot.warnings, init: { status: 201 } },
   );
 }
 

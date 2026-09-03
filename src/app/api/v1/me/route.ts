@@ -59,6 +59,6 @@ export async function GET(req: Request) {
         resets_at: mcp.resets_at,
       },
     },
-    { warnings: patCheck.warnings },
+    { warnings: patCheck.snapshot.warnings },
   );
 }

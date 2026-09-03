@@ -92,6 +92,28 @@ async function main() {
   console.log(`jonts seeded: ${count}`);
   if (count !== 247) throw new Error(`expected 247 jonts, seeded ${count}`);
 
+  // VOL-11 §7: a Jont is 'built' only when a real engine exists beside the
+  // card. BUILT_JONT_IDS is the code-side source; the DB row is the
+  // projection and never disagrees (harness rule: no built row without an
+  // engine, no engine without a built row).
+  const { BUILT_JONT_IDS } = await import('../src/lib/jont-runtime/engines');
+  const built = await db.jont.updateMany({
+    where: { id: { in: BUILT_JONT_IDS } },
+    data: { status: 'built' },
+  });
+  const unbuilt = await db.jont.updateMany({
+    where: { id: { notIn: BUILT_JONT_IDS }, status: 'built' },
+    data: { status: 'planned' },
+  });
+  console.log(`jonts marked built: ${built.count} (engines: ${BUILT_JONT_IDS.length}); demoted: ${unbuilt.count}`);
+  if (built.count !== BUILT_JONT_IDS.length) {
+    const ids = new Set(BUILT_JONT_IDS);
+    const rows = await db.jont.findMany({ where: { id: { in: [...ids] } }, select: { id: true } });
+    const missing = [...ids].filter((id) => !rows.some((r) => r.id === id));
+    throw new Error(`engine ids missing from catalog: ${missing.join(', ')}`);
+  }
+
+
   // VOL-04 §7: meta.version row — SQL reads the version from the single source.
   await db.meta.upsert({
     where: { key: 'version' },
