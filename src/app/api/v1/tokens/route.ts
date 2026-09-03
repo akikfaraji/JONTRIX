@@ -120,6 +120,27 @@ export async function POST(req: Request) {
     }
   }
 
+  // VOL-10 §2/§4.4: an AAT-level max_calls_per_day clamp MUST be ≤ the
+  // owner tier's daily server limit — 422 with the offending field on over-clamp.
+  if (body.kind === 'aat' && body.scopes && typeof body.scopes === 'object') {
+    const clamp = (body.scopes as { max_calls_per_day?: unknown }).max_calls_per_day;
+    if (clamp !== undefined) {
+      if (typeof clamp !== 'number' || clamp < 1 || !Number.isInteger(clamp)) {
+        return fail(ERR.ARGUMENTS_INVALID, 'ARGUMENTS_INVALID', 'max_calls_per_day must be a positive integer', {
+          field: 'scopes.max_calls_per_day',
+        });
+      }
+      if (clamp > ent.limits.server_calls_per_day) {
+        return fail(
+          ERR.ARGUMENTS_INVALID,
+          'ARGUMENTS_INVALID',
+          `max_calls_per_day ${clamp} exceeds your ${ent.tier} plan's daily server limit (${ent.limits.server_calls_per_day})`,
+          { field: 'scopes.max_calls_per_day' },
+        );
+      }
+    }
+  }
+
   const minted = mintSecret(body.kind);
   const row = await db.token.create({
     data: {
@@ -131,6 +152,9 @@ export async function POST(req: Request) {
       last4: minted.last4,
       scopesJson: JSON.stringify(body.scopes ?? {}),
       status: 'active',
+      // VOL-10 §2: AATs default to 90-day expiry (renewable; scopes fixed
+      // at creation). PATs never expire (rotatable + revocable, D-03).
+      ...(body.kind === 'aat' ? { expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000) } : {}),
     },
   });
 

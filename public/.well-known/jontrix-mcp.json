@@ -1,0 +1,28 @@
+{
+  "jontrix_mcp": {
+    "version": 1,
+    "protocol_version": "2025-06-18",
+    "endpoints": {
+      "login": "https://mcp.jontrix.app/api/mcp/login",
+      "tools": "https://mcp.jontrix.app/api/mcp/tools",
+      "call": "https://mcp.jontrix.app/api/mcp/call",
+      "quota": "https://mcp.jontrix.app/api/mcp/quota",
+      "refresh": "https://mcp.jontrix.app/api/mcp/refresh",
+      "remote_mcp": "https://mcp.jontrix.app/mcp"
+    },
+    "gateway": {
+      "npm": "jontrix-gateway",
+      "pypi": "jontrix-gateway",
+      "binaries": "https://github.com/fraziym/jontrix/releases"
+    },
+    "auth": {
+      "agent_kinds": ["aat"],
+      "bearer_scheme": "Authorization: Bearer",
+      "data_plane": {
+        "kind": "pat",
+        "base": "https://api.jontrix.app/api/v1",
+        "contract": "VOL-05 §3"
+      }
+    }
+  }
+}

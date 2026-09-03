@@ -15,6 +15,9 @@ export const AUDIT_EVENTS = [
   'boost.granted',
   'billing.webhook_failed',
   'mode.brake_flipped',
+  'mcp.device.approved',
+  'mcp.device.attached',
+  'mcp.session.revoked',
 ] as const;
 
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];
