@@ -85,3 +85,20 @@ Recorded at build start ("The frontend should use next... The backend should als
 
 - **Workspace relocation:** all user-facing deliverables moved from `download/` to `jontrix/` (local mirror only — everything in it already lives in this repository as `spec/`, `deliverables/`, `research/`, `docs/`). `jontrix/` is git-ignored; the repository remains the canonical, complete copy.
 - Going forward, synced user-visible volume copies live under `jontrix/spec/` (was `download/spec/`).
+
+---
+
+## Build Environment Deltas under D-07 (2026-09-03, implementation phase)
+
+Recorded during the foundation build (commits 11cef6c..f6fd739). Each delta preserves the LOCKED behavior contract while adapting storage/mechanics to the Next.js + Node.js single-process build environment; when a deployment target is chosen, these are the swap points.
+
+| # | Spec contract | D-07 realization | Why |
+|---|---------------|------------------|-----|
+| ENV-1 | KV `STATE` (VOL-04 §6): OTP codes, day-locks, OAuth states | `KvState` SQLite table (hashed values, TTL columns, opportunistic purge) | Next.js route bundles do not share module memory — cross-route state must live in the one shared store. Verified by test: in-memory OTP state broke the request→verify flow. |
+| ENV-2 | KV `BURST` (VOL-05 §5): 10 req / 10 s sliding window | In-process sliding-window Map with identical semantics (same limits, same `Retry-After`) | Soft guard; the hard caps live in `entitlements` (SQLite, authoritative). Swap to real KV at deploy. |
+| ENV-3 | KV `ENT` entitlement cache ≤ 60 s (VOL-05 §5) | Direct D1-primary lookups; envelope carries live quota per response | Single-process + SQLite primary is already one lookup; cache becomes relevant at deploy scale. |
+| ENV-4 | Cookie (VOL-06 §2): access 15 min inside signed payload + refresh 30 d single-use, family revocation | Implemented as specified: HMAC-signed 15-min access bound to the session row, single-use refresh rotation with family revocation audited; `jx_sess` carries `access:refresh` (colon separator — access itself contains dots; Next's cookie serializer encodes values once) | Contract preserved verbatim; the separator detail is a realization note from a live double-encoding bug. |
+| ENV-5 | VOL-07 §2 route table (`/t/{slug}`, `/dashboard`, …) | Single-route SPA shell (`/`) with view switching while in the sandbox preview (only `/` is user-visible); routes become real Next.js App Router paths at deployment | Sandbox constraint; every view already maps 1:1 to a VOL-07 route so the migration is mechanical. |
+| ENV-6 | OTP delivery (VOL-06 §2): email | `log` driver in the build environment — code printed to the server log only, stated honestly in the UI; SMTP lands with the billing phase | No SMTP credentials exist yet (C1/C7); the verification path (hashed codes, TTL, lockout) is fully exercised. |
+
+All deltas recorded as required by VOL-00 §0.1's tie-breaker ladder (constraint-preserving, $0-cost, deterministic, least operational surface).
