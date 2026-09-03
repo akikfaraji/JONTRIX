@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "JONTRIX",
+  "version": "0.1.0",
+  "description": "Right-click → JONTRIX. Run server-side data tools from any tab. No data collection; only what you select is processed.",
+  "permissions": ["contextMenus", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "JONTRIX"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "128": "icon128.png"
+  }
+}

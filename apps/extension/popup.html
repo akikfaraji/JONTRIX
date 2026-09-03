@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { width: 320px; margin: 0; padding: 12px; font-size: 13px; line-height: 1.45; }
+  h1 { font-size: 13px; margin: 0 0 8px; }
+  .chip { border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; font-size: 11px; }
+  .quota { margin: 0 0 8px; }
+  .muted { opacity: .65; font-size: 12px; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px; margin-bottom: 8px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 6px 4px; border-top: 1px solid rgba(128,128,128,.25); cursor: pointer; }
+  li:hover { background: rgba(128,128,128,.12); }
+  li small { display: block; opacity: .65; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+  <h1>JONTRIX <span class="chip" id="tier">…</span></h1>
+  <p class="quota muted" id="quota">checking quota…</p>
+  <input id="q" type="search" placeholder="Search 247 tools" aria-label="Search the catalog">
+  <ul id="results"></ul>
+  <p class="muted" id="last" style="margin-top:8px"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
