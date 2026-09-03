@@ -1,0 +1,74 @@
+// JONTRIX data layer — shaped after VOL-04 (D1 column contracts), realized on
+// SQLite via Prisma per the founder's Node.js stack decision (D-07).
+// Conventions kept from VOL-04 §1: money as integer cents/Stars, UTC timestamps,
+// consent default-denied, no secrets at rest.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// VOL-04 §4 `plans` — seeded once from src/lib/plans.ts (VOL-01 §4.1 verbatim).
+model Plan {
+  tier                String  @id // free | pro | studio | max
+  priceUsdCents       Int
+  priceUsdAnnualCents Int
+  priceStars          Int
+  limitsJson          String
+  active              Boolean @default(true)
+}
+
+// VOL-04 §4 `jonts` — catalog registry seeded from spec/catalog/jonts.seed.json.
+model Jont {
+  id           String  @id // jont_j001_<slug> per VOL-04
+  family       String // pattern family (VOL-13 family ids land with VOL-13 phase)
+  title        String
+  score        Float
+  tierFit      String // FREE | PRO | MAX
+  platformRole String // HOOK | GLUE | PRO | LTV
+  context      String // client | server | hybrid
+  description  String? // evidence-cited one-liner (VOL-07 §3 subtitle)
+  mcpExposed   Boolean @default(true)
+  seoSlug      String  @unique
+  faqJson      String?
+  status       String  @default("planned") // planned | built | disabled
+  createdAt    DateTime @default(now())
+
+  @@index([family, score(sort: Desc)])
+}
+
+// VOL-04 §3 `users` — consent machinery columns present from day one (D-05).
+model User {
+  id                String    @id @default(cuid())
+  handle            String    @unique
+  displayName       String?
+  email             String?   @unique
+  telegramUserId    String?   @unique
+  aiTrainingConsent String    @default("denied") // granted | denied (D-05)
+  consentVersion    Int       @default(0)
+  consentAskedAt    DateTime?
+  settingsJson      String    @default("{}")
+  status            String    @default("active") // active | suspended | deleted
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime?
+
+  entitlement Entitlement?
+}
+
+// VOL-04 §4 `entitlements` — live tier + window + windowed counters.
+model Entitlement {
+  userId        String    @id
+  tier          String    @default("free")
+  source        String? // stars | usdt | grant
+  windowStarts  DateTime?
+  windowExpires DateTime?
+  countersJson  String    @default("{}") // keys carry their window: srv_YYYYMMDD, mcp_YYYYMM...
+  version       Int       @default(1)
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
