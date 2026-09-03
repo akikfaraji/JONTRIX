@@ -574,4 +574,523 @@ export const naturalLanguageToCron: JontEngine = {
   },
 };
 
-export const CONVERTER_ENGINES = [studyDeckConverter, weddingGuestListPlanner, flashcardDataPortability, chatgptExportConverter, seatingChartsRandomGroupMaker, sqlQueryExplainer, naturalLanguageToCron];
+// ─── jont_j010_curl-to-code ────────────────────────────────────────────────
+
+/** Shell-like tokenizer: splits on spaces, respects '…' and "…" quoting. */
+function tokenizeShell(src: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: string | null = null;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === ' ' || ch === '\t') {
+      if (current) tokens.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+export const curlToCode: JontEngine = {
+  manifest: {
+    id: 'jont_j010_curl-to-code',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['curl'],
+        properties: {
+          curl: { type: 'string', format: 'textarea', description: 'The curl command (multi-line with trailing backslashes is fine).' },
+          target: { type: 'string', enum: ['javascript_fetch', 'python_requests', 'php_curl', 'go_nethttp'], description: 'Language to emit.' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: true,
+    evidence: { problem_row: 'DV-B5', score: 6.58 },
+  },
+  run(input): JontResult {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const raw = String(input.curl ?? '').replace(/\\\r?\n/g, ' ').trim();
+    if (!raw) throw new Error('CURL_EMPTY|paste a curl command');
+
+    const tokens = tokenizeShell(raw.replace(/^curl\b/i, ''));
+    let method = 'GET';
+    let url = '';
+    const headers: Array<[string, string]> = [];
+    let body: string | null = null;
+    const formFields: string[] = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t === '-X' || t === '--request') method = (tokens[++i] ?? 'GET').toUpperCase();
+      else if (t === '-H' || t === '--header') {
+        const h = tokens[++i] ?? '';
+        const idx = h.indexOf(':');
+        if (idx > 0) headers.push([h.slice(0, idx).trim(), h.slice(idx + 1).trim()]);
+      } else if (t === '-d' || t === '--data' || t === '--data-raw' || t === '--data-binary' || t === '--data-ascii') {
+        body = tokens[++i] ?? '';
+        if (method === 'GET') method = 'POST';
+      } else if (t === '-F' || t === '--form') {
+        formFields.push(tokens[++i] ?? '');
+        if (method === 'GET') method = 'POST';
+      } else if (t === '-u' || t === '--user') {
+        const cred = tokens[++i] ?? '';
+        headers.push(['Authorization', `Basic ${Buffer.from(cred).toString('base64')}`]);
+        warnings.push('-u user:pass was converted to a Basic Authorization header — remove it before committing this snippet anywhere public.');
+      } else if (t === '-k' || t === '--insecure') {
+        warnings.push('the original command disables TLS verification (-k); the generated code does NOT replicate that — fix the certificate instead.');
+      } else if (t === '--compressed' || t === '-s' || t === '--silent' || t === '-L' || t === '--location' || t === '-i' || t === '--include' || t === '-v' || t === '--verbose') {
+        // transport flags: safe to ignore for request construction
+      } else if (!t.startsWith('-')) {
+        if (t.startsWith('http://') || t.startsWith('https://')) url = t;
+        else if (!url && t) {
+          url = t;
+          if (!/^https?:\/\//i.test(url)) warnings.push(`the URL has no scheme; "https://" was assumed: ${url}`);
+        }
+      }
+    }
+    if (!url) throw new Error('URL_MISSING|no URL found in the curl command');
+    if (formFields.length > 0) warnings.push(`-F multipart form fields were found (${formFields.length}); multipart bodies are not emitted — assemble them with your language's form-data API.`);
+    const hasBody = body !== null;
+    if (hasBody && method === 'GET') method = 'POST';
+
+    const contentType = headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '';
+    const codeHeaders = headers.filter(([k]) => k.toLowerCase() !== 'content-length');
+    const bodyIsJson = /json/i.test(contentType) || (!!body && body.trim().startsWith('{') && !contentType);
+
+    const lines: string[] = [];
+    let filename = 'request.js';
+    const target = String(input.target ?? 'javascript_fetch');
+
+    if (target === 'python_requests') {
+      filename = 'request.py';
+      lines.push('import requests');
+      lines.push('');
+      lines.push('url = ' + JSON.stringify(url));
+      lines.push(`method = "${method}"`);
+      lines.push('headers = {');
+      for (const [k, v] of codeHeaders) lines.push(`    ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
+      if (hasBody && !codeHeaders.some(([k]) => k.toLowerCase() === 'content-type') && bodyIsJson) lines.push('    "Content-Type": "application/json",');
+      lines.push('}');
+      lines.push(hasBody ? `payload = ${JSON.stringify(body)}` : 'payload = None');
+      lines.push('');
+      lines.push('response = requests.request(method, url, headers=headers, data=payload)');
+      lines.push('response.raise_for_status()');
+      lines.push('print(response.status_code, response.text)');
+    } else if (target === 'php_curl') {
+      filename = 'request.php';
+      lines.push('<?php');
+      lines.push('$ch = curl_init(' + JSON.stringify(url) + ');');
+      lines.push(`curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '${method}');`);
+      lines.push('curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);');
+      const headerLines = codeHeaders.map(([k, v]) => `${k}: ${v}`);
+      if (hasBody && bodyIsJson && !codeHeaders.some(([k]) => k.toLowerCase() === 'content-type')) headerLines.push('Content-Type: application/json');
+      lines.push('curl_setopt($ch, CURLOPT_HTTPHEADER, [');
+      for (const h of headerLines) lines.push(`    '${h.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}',`);
+      lines.push(']);');
+      if (hasBody) lines.push(`curl_setopt($ch, CURLOPT_POSTFIELDS, ${JSON.stringify(body)});`);
+      lines.push('$response = curl_exec($ch);');
+      lines.push('curl_close($ch);');
+    } else if (target === 'go_nethttp') {
+      filename = 'request.go';
+      lines.push('package main');
+      lines.push('');
+      lines.push('import (');
+      lines.push('\t"fmt"');
+      lines.push('\t"io"');
+      lines.push('\t"net/http"');
+      if (hasBody) lines.push('\t"strings"');
+      lines.push(')');
+      lines.push('');
+      const payloadArg = hasBody ? 'strings.NewReader(' + JSON.stringify(body) + ')' : 'nil';
+      lines.push(`req, err := http.NewRequest("${method}", ${JSON.stringify(url)}, ${payloadArg})`);
+      lines.push('if err != nil {');
+      lines.push('\tpanic(err)');
+      lines.push('}');
+      for (const [k, v] of codeHeaders) lines.push(`req.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+      if (hasBody && bodyIsJson && !codeHeaders.some(([k]) => k.toLowerCase() === 'content-type')) lines.push('req.Header.Set("Content-Type", "application/json")');
+      lines.push('');
+      lines.push('res, err := http.DefaultClient.Do(req)');
+      lines.push('if err != nil {');
+      lines.push('\tpanic(err)');
+      lines.push('}');
+      lines.push('defer res.Body.Close()');
+      lines.push('respBody, _ := io.ReadAll(res.Body)');
+      lines.push('fmt.Println(res.StatusCode, string(respBody))');
+    } else {
+      lines.push(`const response = await fetch(${JSON.stringify(url)}, {`);
+      lines.push(`  method: '${method}',`);
+      if (codeHeaders.length > 0 || (hasBody && bodyIsJson)) {
+        lines.push('  headers: {');
+        for (const [k, v] of codeHeaders) lines.push(`    ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
+        if (hasBody && bodyIsJson && !codeHeaders.some(([k]) => k.toLowerCase() === 'content-type')) lines.push(`    'Content-Type': 'application/json',`);
+        lines.push('  },');
+      }
+      if (hasBody) lines.push(`  body: ${JSON.stringify(body)},`);
+      lines.push('});');
+      lines.push('');
+      lines.push('if (!response.ok) {');
+      lines.push(`  throw new Error(\`HTTP \${response.status}: \${await response.text()}\`);`);
+      lines.push('}');
+      lines.push('');
+      lines.push('const data = await response.text();');
+    }
+
+    return {
+      data: {
+        output: lines.join('\n'),
+        filename,
+        method,
+        url,
+        target,
+        header_count: codeHeaders.length,
+        has_body: hasBody,
+      },
+      warnings,
+      change_log: [
+        { at: new Date().toISOString(), note: `parsed ${method} ${url}, ${codeHeaders.length} header(s), body ${hasBody ? `${body?.length} bytes` : 'none'}` },
+      ],
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j094_api-error-decoder ───────────────────────────────────────────
+
+const HTTP_CODE_TABLE: Record<number, { title: string; causes: string[]; checks: string[] }> = {
+  400: { title: 'Bad Request', causes: ['malformed body (invalid JSON/encoding)', 'missing required field', 'parameter type mismatch'], checks: ['validate the body against the API schema', 'check Content-Type matches the body format', 'log the exact request that failed'] },
+  401: { title: 'Unauthorized', causes: ['missing or expired token', 'wrong auth scheme (Bearer vs Basic)', 'clock skew breaking signature auth'], checks: ['confirm the Authorization header is actually sent', 'check token expiry and issuer', 'try the token with a minimal request (curl -v)'] },
+  403: { title: 'Forbidden', causes: ['valid token, missing permission/scope', 'IP or region blocked', 'resource owner denies access'], checks: ['compare the token scopes with the endpoint requirements', 'check account/plan permissions', 'verify IP allowlists'] },
+  404: { title: 'Not Found', causes: ['wrong path or version', 'resource belongs to another account', 'trailing slash rules'], checks: ['print the exact URL being requested', 'confirm the API version prefix', 'verify the resource id in that environment (staging vs prod)'] },
+  405: { title: 'Method Not Allowed', causes: ['GET used where POST required', 'correct path, wrong verb'], checks: ['check the endpoint docs for the expected verb', 'look for a 4xx Allow header in the response'] },
+  409: { title: 'Conflict', causes: ['duplicate id / unique constraint', 'stale version (optimistic locking)'], checks: ['retry with the current version of the resource', 'check whether the id already exists'] },
+  413: { title: 'Payload Too Large', causes: ['body exceeds size limit', 'upload larger than plan limit'], checks: ['compress or split the payload', 'check the documented max size'] },
+  415: { title: 'Unsupported Media Type', causes: ['Content-Type missing or wrong', 'server expects a different encoding'], checks: ['set Content-Type explicitly', 'compare with a working example request'] },
+  422: { title: 'Unprocessable Entity', causes: ['schema-valid but semantically rejected (validation errors)', 'business rule violation'], checks: ['read the error details array field by field', 'fix the first error first — later ones are often cascades'] },
+  429: { title: 'Too Many Requests', causes: ['rate limit exceeded', 'quota exhausted for period'], checks: ['honor the Retry-After header', 'add exponential backoff with jitter', 'check X-RateLimit-* headers for the window'] },
+  500: { title: 'Internal Server Error', causes: ['server-side bug', 'unhandled exception in the handler'], checks: ['retry once — 500s are sometimes transient', 'find the request-id header and attach it to a support ticket', 'check the provider status page'] },
+  502: { title: 'Bad Gateway', causes: ['upstream crashed or restarted', 'proxy timeout to upstream'], checks: ['retry with backoff', 'check provider status page', 'reduce request size/frequency'] },
+  503: { title: 'Service Unavailable', causes: ['maintenance window', 'overloaded or degraded dependency'], checks: ['honor Retry-After if present', 'circuit-break instead of hammering'] },
+  504: { title: 'Gateway Timeout', causes: ['upstream exceeded the proxy timeout', 'your request triggered a slow path'], checks: ['shrink the request (pagination, filters)', 'check whether an async endpoint exists'] },
+};
+
+const apiErrorDecoder: JontEngine = {
+  manifest: {
+    id: 'jont_j094_cryptic-api-error-responses-cost-hours',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['response'],
+        properties: {
+          response: { type: 'string', format: 'textarea', description: 'Paste the raw HTTP response (status line, headers, body) or just the status code or error JSON.' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: true,
+    evidence: { problem_row: 'DV-B4', score: 6.5 },
+  },
+  run(input): JontResult {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const src = String(input.response ?? '').trim();
+    if (!src) throw new Error('RESPONSE_EMPTY|paste the HTTP response or status code');
+
+    let status: number | null = null;
+    const statusLine = /HTTP\/\S+\s+(\d{3})/i.exec(src);
+    const bareCode = /^\d{3}$/.test(src) ? Number(src) : null;
+    let bodyJson: Record<string, unknown> | null = null;
+    const jsonStart = src.indexOf('{');
+    if (jsonStart >= 0) {
+      try {
+        const parsed = JSON.parse(src.slice(jsonStart)) as Record<string, unknown>;
+        if (parsed !== null && typeof parsed === 'object') bodyJson = parsed;
+      } catch {
+        /* body is not clean JSON; fine */
+      }
+    }
+
+    if (statusLine) status = Number(statusLine[1]);
+    else if (bareCode !== null) status = bareCode;
+    else if (bodyJson && typeof bodyJson.status === 'number') status = bodyJson.status as number;
+    else if (bodyJson && typeof bodyJson.code === 'number' && Number(bodyJson.code) >= 400 && Number(bodyJson.code) <= 599) status = bodyJson.code as number;
+
+    if (status === null) {
+      warnings.push('no status code found — paste the full response ("HTTP/1.1 429 Too Many Requests ...") or the bare 3-digit code.');
+    }
+
+    const hints: Record<string, unknown> = {};
+    if (bodyJson) {
+      for (const key of ['message', 'error', 'code', 'detail', 'errors', 'request_id', 'requestId']) {
+        if (key in bodyJson) hints[key] = bodyJson[key];
+      }
+    }
+    const retryAfter = /retry-after:\s*(\S+)/i.exec(src);
+    if (retryAfter) hints.retry_after = retryAfter[1];
+    const rateRemaining = /x-ratelimit-remaining:\s*(\S+)/i.exec(src);
+    if (rateRemaining) hints.rate_limit_remaining = rateRemaining[1];
+    const requestId = /x-request-id:\s*(\S+)/i.exec(src);
+    if (requestId) hints.request_id = requestId[1];
+
+    const info = status !== null ? HTTP_CODE_TABLE[status] : undefined;
+    const lines: string[] = [];
+    if (status !== null) {
+      lines.push(`Status ${status}${info ? ` — ${info.title}` : info === undefined && status >= 200 && status < 300 ? ' — success (nothing to debug here)' : ' — non-standard or informational status'}`);
+      lines.push('');
+      if (info) {
+        lines.push('Most common causes:');
+        for (const c of info.causes) lines.push(`  - ${c}`);
+        lines.push('');
+        lines.push('What to check, in order:');
+        for (const [i, c] of info.checks.entries()) lines.push(`  ${i + 1}. ${c}`);
+      } else if (status !== null && (status < 200 || status > 599)) {
+        lines.push('This is not a standard HTTP status code — check for a typo or a proxy-injected code.');
+      }
+    }
+    if (Object.keys(hints).length > 0) {
+      lines.push('');
+      lines.push('Extracted from the response:');
+      for (const [k, v] of Object.entries(hints)) lines.push(`  ${k}: ${JSON.stringify(v)}`);
+    }
+    if (bodyJson && typeof bodyJson.errors === 'object' && bodyJson.errors !== null) {
+      lines.push('');
+      lines.push('Validation detail (errors field):');
+      lines.push(JSON.stringify(bodyJson.errors, null, 2).split('\n').map((l) => `  ${l}`).join('\n'));
+    }
+    if (status !== null && status >= 500) warnings.push('5xx failures happen on the provider side — attach the request-id (if any) when contacting support; do not blind-retry more than once or twice.');
+
+    return {
+      data: {
+        output: lines.join('\n'),
+        filename: null,
+        status,
+        title: info?.title ?? null,
+        hints,
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j222_telegram-group-export-analyzer ──────────────────────────────
+
+const telegramExportAnalyzer: JontEngine = {
+  manifest: {
+    id: 'jont_j222_telegram-group-export-analyzer',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['export_json'],
+        properties: {
+          export_json: { type: 'string', format: 'textarea', description: 'Telegram Desktop group export (result.json) — Chat export > Machine-readable JSON.' },
+          top: { type: 'number', description: 'How many top senders to list (default 10).' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'MAX',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-TG-telegram-TG-2', score: 5.35 },
+  },
+  run(input): JontResult {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const src = String(input.export_json ?? '');
+    if (!src.trim()) throw new Error('EXPORT_EMPTY|paste the result.json content from a Telegram Desktop export');
+
+    const parsed = JSON.parse(src) as { messages?: unknown[]; name?: string };
+    const messages = (parsed.messages ?? []) as Array<Record<string, unknown>>;
+    if (messages.length === 0) throw new Error('NO_MESSAGES|the export contains no messages array');
+
+    const topN = Math.max(1, Math.min(50, Math.floor(Number(input.top) || 10)));
+    const perAuthor = new Map<string, number>();
+    const perDay = new Map<string, number>();
+    let links = 0;
+    let photos = 0;
+    let files = 0;
+    let stickers = 0;
+    let voice = 0;
+    let replies = 0;
+    let totalLength = 0;
+    let textMessages = 0;
+
+    const textOf = (t: unknown): string =>
+      Array.isArray(t)
+        ? t.map((part) => (typeof part === 'string' ? part : typeof part === 'object' && part !== null && typeof (part as Record<string, unknown>).text === 'string' ? String((part as Record<string, unknown>).text) : '')).join('')
+        : typeof t === 'string' ? t : '';
+
+    for (const m of messages) {
+      if (m.type !== 'message') continue;
+      const author = typeof m.from === 'string' ? m.from : typeof m.actor === 'string' ? String(m.actor) : 'unknown';
+      perAuthor.set(author, (perAuthor.get(author) ?? 0) + 1);
+      const day = typeof m.date === 'string' ? m.date.slice(0, 10) : 'unknown';
+      perDay.set(day, (perDay.get(day) ?? 0) + 1);
+      const text = textOf(m.text);
+      if (text) {
+        textMessages++;
+        totalLength += text.length;
+        links += (text.match(/https?:\/\//g) ?? []).length;
+      }
+      if (m.photo) photos++;
+      if (m.file) files++;
+      if (m.sticker_emoji) stickers++;
+      if (m.media_type === 'voice_message') voice++;
+      if (m.reply_to_message_id) replies++;
+    }
+
+    const days = [...perDay.entries()].sort((a, b) => b[1] - a[1]);
+    const busiest = days[0] ?? ['n/a', 0];
+    const topAuthors = [...perAuthor.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
+    const dateKeys = [...perDay.keys()].filter((d) => d !== 'unknown').sort();
+    const range = dateKeys.length > 0 ? `${dateKeys[0]} to ${dateKeys[dateKeys.length - 1]}` : 'unknown';
+    const distinctDays = dateKeys.length || 1;
+    const avgPerDay = Math.round((textMessages + photos + files + stickers) / distinctDays);
+
+    const lines: string[] = [];
+    lines.push(`# Group export analysis${typeof parsed.name === 'string' ? `: ${parsed.name}` : ''}`);
+    lines.push('');
+    lines.push(`- Messages: ${messages.length} over ${range}`);
+    lines.push(`- Average per active day: ${avgPerDay}`);
+    lines.push(`- Busiest day: ${busiest[0]} (${busiest[1]} messages)`);
+    lines.push(`- Text messages: ${textMessages} (avg length ${textMessages ? Math.round(totalLength / textMessages) : 0} chars)`);
+    lines.push(`- Links shared: ${links}`);
+    lines.push(`- Photos: ${photos} · Files: ${files} · Stickers: ${stickers} · Voice: ${voice}`);
+    lines.push(`- Replies: ${replies}`);
+    lines.push('');
+    lines.push(`## Top ${topAuthors.length} senders`);
+    lines.push('');
+    for (const [author, count] of topAuthors) lines.push(`- ${author}: ${count}`);
+    lines.push('');
+    lines.push('## Last 10 active days');
+    lines.push('');
+    for (const [day, count] of days.slice(0, 10)) lines.push(`- ${day}: ${count}`);
+    warnings.push('The export is analyzed in memory for this single request and never stored.');
+
+    return {
+      data: {
+        output: lines.join('\n'),
+        filename: 'group-analysis.md',
+        messages: messages.length,
+        authors: perAuthor.size,
+        top_senders: topAuthors,
+        busiest_day: busiest,
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j229_league-scheduler ────────────────────────────────────────────
+
+const leagueScheduler: JontEngine = {
+  manifest: {
+    id: 'jont_j229_sports-league-scheduling-for-volunteers',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['teams'],
+        properties: {
+          teams: { type: 'string', format: 'textarea', description: 'Team names, one per line (3–24 teams).' },
+          rounds: { type: 'string', enum: ['single', 'double'], description: 'Single (everyone plays everyone once) or double (home and away).' },
+          start_date: { type: 'string', description: 'First matchday date, YYYY-MM-DD (optional).' },
+          interval_days: { type: 'number', description: 'Days between matchdays (default 7).' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: true,
+    evidence: { problem_row: 'WG-G12', score: 5.22 },
+  },
+  run(input): JontResult {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const teamsRaw = String(input.teams ?? '')
+      .split('\n')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (teamsRaw.length < 3) throw new Error('TEAMS_TOO_FEW|need at least 3 teams');
+    if (teamsRaw.length > 24) throw new Error('TEAMS_TOO_MANY|24 teams is the ceiling for this engine');
+    if (new Set(teamsRaw).size !== teamsRaw.length) throw new Error('DUPLICATE_TEAMS|team names must be unique');
+
+    const isDouble = input.rounds === 'double';
+    const interval = Math.max(1, Math.floor(Number(input.interval_days) || 7));
+    const startDate = typeof input.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.start_date) ? input.start_date : null;
+    if (!startDate) warnings.push('no start_date given — matchdays are numbered, not dated.');
+
+    let rotation = [...teamsRaw];
+    if (rotation.length % 2 === 1) {
+      rotation.push('BYE');
+      warnings.push('odd team count — one team rests (BYE) each matchday.');
+    }
+    rotation = seededShuffle(rotation, seededRandom(fnv1a(stableJoin(teamsRaw))));
+
+    const rounds: Array<Array<[string, string]>> = [];
+    const n = rotation.length;
+    for (let round = 0; round < n - 1; round++) {
+      const pairs: Array<[string, string]> = [];
+      for (let i = 0; i < n / 2; i++) {
+        const home = rotation[i];
+        const away = rotation[n - 1 - i];
+        if (home !== 'BYE' && away !== 'BYE') {
+          // alternate home advantage by round parity for fairness
+          pairs.push(round % 2 === 0 ? [home, away] : [away, home]);
+        }
+      }
+      rounds.push(pairs);
+      // circle method: keep index 0 fixed, rotate the rest
+      rotation = [rotation[0], rotation[n - 1], ...rotation.slice(1, n - 1)];
+    }
+    if (isDouble) rounds.push(...rounds.map((r) => r.map(([h, a]) => [a, h] as [string, string])));
+
+    const lines: string[] = [];
+    lines.push(`# Schedule — ${teamsRaw.length} teams, ${rounds.length} matchday(ies)`);
+    lines.push('');
+    for (const [ri, pairs] of rounds.entries()) {
+      const label = startDate
+        ? new Date(Date.UTC(...(startDate.split('-').map(Number) as [number, number, number])) + ri * interval * 86400000).toISOString().slice(0, 10)
+        : `Matchday ${ri + 1}`;
+      lines.push(`## ${label}`);
+      for (const [home, away] of pairs) lines.push(`- ${home} vs ${away}`);
+      lines.push('');
+    }
+
+    return {
+      data: {
+        output: lines.join('\n'),
+        filename: 'schedule.md',
+        matchdays: rounds.length,
+        matches_total: rounds.reduce((s, r) => s + r.length, 0),
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+function stableJoin(items: string[]): string {
+  return [...items].sort().join('\u0000');
+}
+
+export const CONVERTER_ENGINES = [studyDeckConverter, weddingGuestListPlanner, flashcardDataPortability, chatgptExportConverter, seatingChartsRandomGroupMaker, sqlQueryExplainer, naturalLanguageToCron, curlToCode, apiErrorDecoder, telegramExportAnalyzer, leagueScheduler];

@@ -388,4 +388,160 @@ export const changelogFromGitLog: JontEngine = {
   },
 };
 
-export const GENERATOR_ENGINES = [examQuestionBankBuilder, citationFormatter, worksheetRubricGenerator, changelogFromGitLog];
+// ─── jont_j201_quiz-generator-from-notes ───────────────────────────────────
+
+interface GeneratedQuestion {
+  type: 'mcq' | 'cloze';
+  question: string;
+  options: string[];
+  answer_index: number;
+  source: string;
+}
+
+export const quizGeneratorFromNotes: JontEngine = {
+  manifest: {
+    id: 'jont_j201_quiz-generator-from-notes',
+    pattern: 'generator',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['notes'],
+        properties: {
+          notes: { type: 'string', format: 'textarea', description: 'Study notes — sentences or bullet points. Questions are generated deterministically from definitions and facts.' },
+          question_count: { type: 'number', description: 'How many questions to generate (default 10).' },
+          title: { type: 'string', description: 'Quiz title for the header.' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-EDU-make-WG-G1', score: 5.7 },
+  },
+  run(input): JontResult {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const src = String(input.notes ?? '');
+    if (!src.trim()) throw new Error('NOTES_EMPTY|paste the study notes');
+
+    const wanted = Math.max(3, Math.min(30, Math.floor(Number(input.question_count) || 10)));
+    const title = String(input.title ?? 'Quiz').trim() || 'Quiz';
+
+    // collect candidate sentences (bullets and sentence lines)
+    const sentences: string[] = [];
+    for (const rawLine of src.split('\n')) {
+      const line = rawLine.replace(/^[\s>*+-]+/, '').trim();
+      if (line.length < 15) continue;
+      for (const s of line.split(/(?<=[.!?])\s+/)) {
+        const t = s.trim();
+        if (t.length >= 15) sentences.push(t);
+      }
+    }
+
+    // deterministic key-fact extraction: definition shapes and numeric facts rank first
+    const definitionRe = /^(.{3,60}?)\s+(?:is|are|was|were|means|refers to|consists of)\s+(.{15,})$/i;
+    const colonRe = /^(.{3,60}?):\s+(.{15,})$/;
+    interface Candidate { sentence: string; key: string; rank: number }
+    const candidates: Candidate[] = [];
+    for (const s of sentences) {
+      const clean = s.replace(/[.;]$/, '');
+      const d = definitionRe.exec(clean);
+      const c = colonRe.exec(clean);
+      const num = /(\d[\d.,]*\s?(?:%|percent|km|kg|years?|days?|hours?| BCE| CE)?)/i.exec(clean);
+      if (d) candidates.push({ sentence: clean, key: d[1].trim(), rank: 0 });
+      else if (c) candidates.push({ sentence: clean, key: c[1].trim(), rank: 1 });
+      else if (num) candidates.push({ sentence: clean, key: num[1].trim(), rank: 2 });
+    }
+
+    if (candidates.length < 3) {
+      warnings.push('only a few definition-shaped or numeric facts were found — quizzes come out thin. Notes with "X is Y" or "X: Y" lines produce the best questions.');
+    }
+    if (candidates.length === 0) throw new Error('NO_FACTS|no definition-shaped or numeric sentences found to build questions from');
+
+    candidates.sort((a, b) => a.rank - b.rank || a.key.localeCompare(b.key));
+    const picked = candidates.slice(0, wanted);
+
+    // deterministic distractor pool: other candidates' keys, stable per-notes seed
+    const allKeys = [...new Set(candidates.map((c) => c.key))];
+    const rand = seededRandom(fnv1a(src.slice(0, 500)));
+    const questions: GeneratedQuestion[] = [];
+
+    for (const [qi, cand] of picked.entries()) {
+      const isCloze = qi % 2 === 1; // alternate deterministically: even → mcq, odd → cloze
+      const others = seededShuffle(
+        allKeys.filter((k) => k.toLowerCase() !== cand.key.toLowerCase()),
+        seededRandom(fnv1a(cand.key) + qi),
+      ).slice(0, 3);
+      if (isCloze) {
+        questions.push({
+          type: 'cloze',
+          question: cand.sentence.replace(new RegExp(escapeRe(cand.key), 'i'), '______'),
+          options: [],
+          answer_index: -1,
+          source: cand.key,
+        });
+      } else {
+        while (others.length < 3 && allKeys.length + others.length > 3) {
+          const filler = `none of these (${others.length + 1})`;
+          others.push(filler);
+        }
+        if (others.length < 3) {
+          warnings.push('not enough distinct key terms for 4-option MCQs — some questions were emitted as cloze instead.');
+          questions.push({
+            type: 'cloze',
+            question: cand.sentence.replace(new RegExp(escapeRe(cand.key), 'i'), '______'),
+            options: [],
+            answer_index: -1,
+            source: cand.key,
+          });
+          continue;
+        }
+        const options = seededShuffle([cand.key, ...others], rand).slice(0, 4);
+        questions.push({
+          type: 'mcq',
+          question: `Which term matches: "${cand.sentence}"?`,
+          options,
+          answer_index: options.indexOf(cand.key),
+          source: cand.key,
+        });
+      }
+    }
+
+    const lines: string[] = [];
+    lines.push(`# ${title} — ${questions.length} questions`);
+    lines.push('');
+    questions.forEach((q, i) => {
+      lines.push(`**${i + 1}. ${q.question}**`);
+      if (q.type === 'mcq') {
+        q.options.forEach((opt, oi) => lines.push(`   ${String.fromCharCode(65 + oi)}. ${opt}`));
+      }
+      lines.push('');
+    });
+    lines.push('## Answer key');
+    lines.push('');
+    questions.forEach((q, i) => {
+      if (q.type === 'mcq') lines.push(`${i + 1}. ${String.fromCharCode(65 + q.answer_index)} — ${q.source}`);
+      else lines.push(`${i + 1}. ${q.source}`);
+    });
+
+    return {
+      data: {
+        markdown: lines.join('\n'),
+        output: lines.join('\n'),
+        filename: `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-quiz.md`,
+        questions: questions.length,
+        mcq: questions.filter((q) => q.type === 'mcq').length,
+        cloze: questions.filter((q) => q.type === 'cloze').length,
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export const GENERATOR_ENGINES = [examQuestionBankBuilder, citationFormatter, worksheetRubricGenerator, changelogFromGitLog, quizGeneratorFromNotes];
