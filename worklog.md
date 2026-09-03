@@ -158,3 +158,18 @@ Stage Summary:
   3. charts/ (8 PNGs)
   4. FRAZIYM_Research_Export_Phase1.md (2,106 lines, 7 streams)
 - MISSION COMPLETE.
+
+---
+Task ID: 7
+Agent: main (Super Z)
+Task: Project naming — propose a super-unique name, collision-verified via live search + DNS probes.
+
+Work Log:
+- Ran 4 z-ai web_search collision checks via scripts/search.sh (JONTRIX, TOOLDEX, EKTAKA, AUTODHAN; 1 batch timed out on retries, evidence still sufficient).
+- DNS-probed jontrix.com/.app/.io, autodhan.com — all NXDOMAIN (unregistered).
+
+Stage Summary:
+- VERDICT: JONTRIX (from Bengali যন্ত্র "jontro" = machine) = recommended product brand. Zero SaaS/tech collision (only a SoundCloud account + transient KPop-Demon-Hunters fan-trend noise); all 3 TLDs unregistered.
+- REJECTED with evidence: TOOLDEX (tooldex.org/.co/.io all live, same exact concept), EKTAKA (ektaka.com live in BD launch market + Bidyanondo charity phrase). AUTODHAN = clean runner-up (search engine couldn't even resolve the term; domain unregistered).
+- Proposed architecture: FRAZIYM = founder/maker brand -> JONTRIX = product -> each micro-tool = a "Jont" -> tiers JONTRIX Free/Pro/Studio.
+- Deliverables NOT rebranded yet (awaiting founder confirmation). Rebrand path: persisted scripts (build_pdf.py, build_xlsx.py, make_charts.py, build_export.sh) make it a one-pass rename.
