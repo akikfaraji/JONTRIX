@@ -57,3 +57,17 @@ server.log
 db/
 .zscripts/
 *.tsbuildinfo
+
+# Internal work files — never publish
+tool-results/
+worklog.md
+/jontrix/
+/scripts/
+/examples/
+/mini-services/
+/Caddyfile
+/tests/database-runtime-build.sh
+/tests/python-runtime-build.sh
+/tests/python-runtime-container.sh
+# Spec-mandated build scripts are force-added over the scripts/ ignore:
+# !scripts/verify-db.ts  (see VOL-00 §0.4 / VOL-04 §7)
