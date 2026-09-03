@@ -11,7 +11,7 @@
 
 You, the build agent, are addressed directly throughout this document. "You" means the autonomous coding agent executing the build. Every volume below is written so that you can act on it without asking a human anything. Where the spec says **LOCKED**, that decision is final and must not be renegotiated, substituted, or "improved." Where the spec says **FALLBACK**, that is the documented Plan-B you switch to only when the primary service fails, is unavailable at build time, or its terms have materially changed. Where the spec says **AGENT CHOICE**, you may pick freely within the stated constraints, and you must record the choice in `docs/decisions.md` with a one-line rationale.
 
-The specification is organized into 15 volumes. Read all of them once, in order, before writing any code. The volumes reference each other by ID (for example, "see VOL-04 §2 for the `usage_ledger` schema"). Volume 12 contains fifty complete build specifications for the fifty highest-value Jonts, and Volume 13 catalogs the remaining long-tail Jonts. Volumes are numbered `00` through `15` and the build order is defined in §0.3 below, which is not the same as the reading order.
+The specification is organized into 16 volumes. Read all of them once, in order, before writing any code. The volumes reference each other by ID (for example, "see VOL-04 §2 for the `usage_ledger` schema"). Volume 12 contains fifty complete build specifications for the fifty highest-value Jonts, and Volume 13 catalogs the remaining long-tail Jonts. Volumes are numbered `00` through `16` (VOL-16 is the ecosystem rules, terms, and consent volume) and the build order is defined in §0.3 below, which is not the same as the reading order.
 
 Three file types appear throughout:
 
@@ -62,7 +62,7 @@ Execute the phases in this exact order. Do not start a phase until the previous 
 
 **Phase 7 — Chrome extension.** Implement VOL-09. *Exit condition:* the extension loads unpacked, authenticates a user, and runs two server-side Jonts (CORS Echo and cURL-to-Code) from any origin tab.
 
-**Phase 8 — MCP server + gateway.** Implement VOL-10: the remote MCP worker and the `jontrix-gateway` package (npm + PyPI + standalone binaries), wired to the `/api/mcp/login` PAT/AAT flow. *Exit condition:* after `jontrix-gateway login`, an MCP client (any reference client) connected through the gateway can list tools and successfully call two Jonts — once with a PAT and once with an AAT — with usage metered in `jont_usage` and quota pre-flight honored.
+**Phase 8 — MCP server + gateway.** Implement VOL-10: the remote MCP worker and the `jontrix-gateway` package (npm + PyPI + standalone binaries), wired to the `/api/mcp/login` AAT flow (PATs are data-plane credentials and are rejected on `/api/mcp/*` per the Decision Register §0.8). *Exit condition:* after `jontrix-gateway login`, an MCP client (any reference client) connected through the gateway can list tools and successfully call two Jonts with an AAT — usage metered in `jont_usage`, quota pre-flight honored — and a PAT presented to `/api/mcp/call` is refused with `403 TOKEN_KIND_MISMATCH`.
 
 **Phase 9 — Remaining Jonts, DoD sweep, launch.** Build the remaining top-50 Jonts from VOL-12 in descending score order, then the long-tail catalog from VOL-13 in family batches. Run the full Definition of Done sweep (VOL-14), wire CI (VOL-14 §3), execute the launch checklist and the 90-day roadmap (VOL-14 §8). *Exit condition:* the DoD report (`docs/dod-report.md`) shows every checklist item checked, and the launch checklist is complete.
 
@@ -183,3 +183,18 @@ export const VERSION = 'V00.00.000-beta-01' as const;
 ```
 
 Every component — API, MCP worker, PWA, extension, gateway, health endpoints, logs, release metadata, the dashboard — imports `VERSION` from there. **NEVER** write a version literal in any other file. The build contract: `apps/api` and `apps/mcp` surface it in `/health` (VOL-05 §7); the PWA about-screen and extension about-page render it verbatim; the gateway reads it at build time from the same file (its own package version is derived, §0.7 below). Package registries force semver, so CI **derives** npm/PyPI versions mechanically — strip the `V`, map `V00.01.003-beta-04` → `0.1.3-beta.4` — and the derived value is written at publish time, never hand-edited. CI carries a **version-hygiene check**: a grep proves the full version regex `V\d{2}\.\d{2}\.\d{3}(-[a-z]+-\d{2})?` appears in exactly one source file (`src/version.ts`) plus the append-only `CHANGELOG.md`; any other hit fails the build. `CHANGELOG.md` records one line per published version in ascending order — version, UTC date, phase/feature summary — and is the only file allowed to repeat the string.
+
+---
+
+## 0.9 Founder Decision Register (LOCKED)
+
+Decisions taken in the founder review of 2026-09-03. Each row is binding and is elaborated in the volume shown; where a row conflicts with older prose in any volume, the row wins.
+
+| # | Decision | Elaborated in |
+|---|----------|---------------|
+| D-01 | Free-tier MCP quota is **40 calls/month** (was 100). Rationale: agent access is the paid differentiator; 40 ≈ two tasting sessions and keeps Free D1 write load ≈ 40k/day at 10k free users. | VOL-01 §4.2, VOL-10 §7 |
+| D-02 | Ads are **Option B — rewarded-only Boost**: AdsGram rewarded video inside the Mini App only; 1 rewarded ad → +10 server calls for the current UTC day, max 2 ads/day (cap +20). Opt-in only, paid tiers never see ads, PWA and extension stay ad-free forever. **Ads never gate access to a user's own data or any base free function** — boost is always surplus (C8 extension). | VOL-01 §5.4, VOL-08 §5, VOL-15 §4 |
+| D-03 | **PAT (Personal Access Token): exactly one per user on every tier.** Full read **and write** access to all of that user's data via the `/api/v1/*` data plane. Rotatable (rotation kills the old secret instantly) and revocable in the dashboard. A PAT is **never accepted on `/api/mcp/*`** — agents use AATs; a PAT presented there gets `403 TOKEN_KIND_MISMATCH`. A PAT cannot manage tokens, change password/email, touch billing, or delete the account (control plane stays behind the browser session). | VOL-10 §2, VOL-05 §3 |
+| D-04 | **AAT (Agent Access Token): tier ladder 1 / 3 / 10 / ∞.** The **dashboard is the only token factory** for both kinds — the device-approval page of `/api/mcp/login` is a dashboard surface that either creates an AAT for the device or attaches an existing one; no unattended minting API exists. | VOL-10 §2–3, VOL-05 §6 |
+| D-05 | **AI-training consent:** account-level `ai_training_consent`, **default `denied` until explicitly granted**. Asked once at onboarding, toggleable in settings, version-stamped re-ask on policy change, every change audit-logged. The training pipeline ingests **granted-only** records. Applies to stored data only — per C6, files processed in-browser never leave the device unless the user saves/syncs them. | VOL-04 §5, VOL-05 §8, VOL-16 §6 |
+| D-06 | The specification gains **VOL-16 — Ecosystem Rules, Terms & Consent** (terms skeleton, acceptable use, privacy/retention, token-abuse rules, payment-rail compliance notes). | VOL-16 |

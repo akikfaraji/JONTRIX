@@ -1,45 +1,68 @@
-# Volume 7 — PWA Surface (Web App + Programmatic SEO)
+# Volume 7 — PWA Surface (S1)
 
 **Document:** JONTRIX Build Specification — VOL-07
+**Publisher:** Fraziym Soft
 **Version:** 1.0 (2026-09-03)
 **Status:** LOCKED except where marked AGENT CHOICE
-**Depends on:** VOL-01 (surfaces, tiers), VOL-05 (envelope, config), VOL-11 (manifests, engines). Referenced by: Phase 4, VOL-08 (Mini App host reuse).
+**Depends on:** VOL-00 (C6, versioning), VOL-01 §2/§4 (surfaces, entitlements), VOL-04/05/06 (schema, routes, auth), VOL-11 (manifest/runtime). Referenced by: VOL-12/13 (cards render here), VOL-14 (DoD).
 
 ---
 
-## §1 Application Shell and Service Worker
+## §1 Scope (LOCKED)
 
-The PWA at `app.jontrix.app` is a Vite + Preact single-page application whose shell is intentionally boring: header (catalog, search, account), a Jont-page outlet, and a footer carrying the version (`src/version.ts`, VOL-03 §5) and the honest status link (VOL-05 §7). The **service worker** contract: app-shell precache (HTML, JS, CSS — content-hashed); engine assets and SEO pages served stale-while-revalidate; API responses never cached by the SW beyond the per-session in-memory store, because entitlements and results are per-user data (VOL-05 §6). Offline behavior is honest, not theatrical: with a cold cache the user sees the shell, the catalog from the last successful `/api/config` snapshot, and a "you are offline — client-side Jonts still work" banner; server-side Jonts queue nothing (C8: no fake sync). **MUST:** Lighthouse performance and accessibility ≥ 90 on the home page and one Jont page (the Phase-4 exit condition), measured in CI on every deploy. **NEVER:** a service worker that caches authenticated responses, a stale SW that survives two deploys (skipWaiting + clients.claim with a version-keyed cache name per FRAZIYM `VERSION`), or a shell that renders prices from anywhere but `/api/config`.
+The PWA is the top-of-funnel and the power surface: `app.jontrix.app` (the app shell) plus programmatic SEO landing pages on the apex (`jontrix.app/<slug>` and family hubs). It runs client-side Jont engines in-browser (C6), calls the platform API for everything server-side, and contains **no ad code of any network** (D-02 — ads are Mini-App-only). Framework: Preact + Vite from the monorepo (VOL-03 §5); the Mini App (VOL-08) reuses this shell's components via `packages/ui`, but this volume is web-only.
 
-## §2 The Jont Page Template (one template, 247 instances)
+## §2 App Shell and Routing (LOCKED)
 
-Every Jont renders through one template parameterized by its manifest (VOL-11 §2) — there is no per-Jont page code, which is what makes 247 Jonts maintainable under 10 min/week (C4). Template sections, in order: **(1)** H1 = the Jont's `name`; subtitle = the row's evidence-cited problem statement verbatim from the registry (VOL-00 §0.5's requirement, fed by VOL-13's seed); **(2)** the workbench (§3–4) sized to the Jont's pattern; **(3)** the honest execution label — "runs in your browser" or "runs on our server" — from `manifest.context` (C6, VOL-01 §3.3); **(4)** tier gate: FREE-fit renders full workbench; PRO/MAX-fit renders the value preview (first N rows / watermark / full analysis of a sample) with the upgrade panel naming the exact tier and price from `/api/config`; **(5)** presets + history slots for signed-in users (VOL-01 §4.2 allowances); **(6)** "related Jonts" (same cluster, 3 items) — the chaining surface that answers DR-D2's tool-stitching pain; **(7)** JSON-LD (`SoftwareApplication` + `FAQPage`) for the SEO layer (§5). **MUST:** the tier gate renders before any engine download for PRO/MAX-fit Jonts (no free WASM delivery of gated engines). **NEVER:** a per-Jont bespoke layout, an invented testimonial, or a gate that blocks the *preview* of a paid Jont's value (C8: show the value, then the price).
+Routes (client-side, each server-renderable or prerendered for SEO where public):
 
-## §3 Engine Loader (client-side execution)
+| Route | Auth | Purpose |
+|---|---|---|
+| `/` | none | home: catalog search, tier pitch, honest quota explainer |
+| `/t/{slug}` | none to run client-side Free Jonts; sign-in for saves | the Jont page template (§3) |
+| `/family/{family}` | none | family hub (programmatic, VOL-13) |
+| `/pricing` | none | renders `plans` rows byte-for-byte (VOL-01 §5.6); Stars rows only inside Mini App context, USDT checkout links here |
+| `/dashboard` | session | account, quota meters, presets, history, billing windows |
+| `/dashboard/tokens` | session | **the token factory UI** (VOL-05 §6): create/attach AATs, rotate/revoke PAT with the shown-once + confirm-rotation ceremony |
+| `/dashboard/settings` | session | settings + **consent card** (VOL-05 §8) |
+| `/connect-agent` | session | the 3-step gateway onboarding copy (VOL-10 §9) |
+| `/about` | none | product, publisher (Fraziym Soft), `VERSION` rendered verbatim |
 
-The loader resolves a Jont's `manifest.engine` to a content-hashed asset in the R2 `engines` bucket (VOL-04 §3), fetches it with the SW caching it for offline reuse, and instantiates it: WASM modules stream-compile with `WebAssembly.instantiateStreaming`; heavy JS engines load as module workers. Loading is progressive — the workbench paints first, a spinner names the engine size honestly ("loading 2.1 MB engine, one time, then cached") — and the loader refuses to download gated engines for locked tiers (§2). Execution runs in a **worker**, never on the main thread; progress is reported as manifest-declared stages (e.g. `parse → transform → serialize`) so the UI can show real progress, not fake bars. Memory: the loader enforces the manifest's `max_input_mb` client-side before reading the file, with the honest error naming the limit and the tier that raises it. **MUST:** the engine communicates with the page only via structured postMessage per the pattern contracts (VOL-11 §4) — no engine touches `fetch`, storage, or DOM. **NEVER:** an engine fetch on a gated Jont before the gate decision, a main-thread transform above the manifest's small-input threshold, or an engine bundle without its content-hash.
+**MUST:** the shell renders the entitlement snapshot (tier, quota block with `base`/`boost`/`effective`) in a persistent header chip; **NEVER** a quota display that hides the boost origin (C8) or a tier label the API did not send.
 
-## §4 Worker Pipeline (large inputs, batches, chaining)
+## §3 The Jont Page Template (LOCKED)
 
-One pipeline component serves the three hard jobs in the catalog: large files (DR-B2/DV-B1: 100 MB–1 GB+ JSON/CSV), batches (row-limited per tier, VOL-01 §4.2), and chaining (the DR-D2 stitch: output of one Jont feeds another without a re-upload). Contract: the pipeline reads File/Blob inputs as **streams** in the worker, processes in manifest-declared chunks (e.g. NDJSON line-groups, CSV row windows), emits partial results incrementally so the UI shows usable output before completion, and enforces the tier's `batch_rows_max` with a live count. Chaining is a local handoff: Jont A's output blob becomes Jont B's input via an in-memory handle — nothing re-uploads, nothing round-trips the server, and the chain UI (a breadcrumb of applied Jonts) is the product's answer to "five websites, five paywalls" (VOL-01 §1). **MUST:** the pipeline backs pressure off (pause/resume via stream backpressure) instead of buffering 1 GB; cancellation is immediate and total. **NEVER:** a client-side "batch" that silently downsamples (it stops at the tier limit with an honest message), or a chain that persists intermediates anywhere (memory or explicit user save only — C6).
+One template renders all 247 Jonts from `manifest_json` (VOL-11 §2). Sections, in order: **(1)** H1 = Jont title; subtitle = the evidence-cited one-liner from the card (VOL-02 §3 copy rules); **(2)** the run panel — inputs per the manifest's input schema (file picker with the tier's `max_upload_mb` stated before selection, text areas, dropdowns); **(3)** the honest execution label: "runs in your browser — files never leave your device" vs "runs on our server" per `context` (C6/C8 — the label is generated from the manifest, never hand-written); **(4)** results area with export buttons (the formats the manifest declares) and, for PRO/MAX-fit previews, the first-N-rows free preview before the paywall (VOL-01 §3.2); **(5)** presets bar (save/load per tier limits); **(6)** related Jonts in family (internal links = SEO). **MUST:** a 402 response renders the upgrade card with `upgrade_url` and the reset time; a 429 renders "daily reset at 00:00 UTC" honestly (VOL-01 §4.3); **NEVER** a client-side Jont that silently calls the server (the manifest validator enforces it, VOL-11 §2).
 
-## §5 Programmatic SEO Pages (the top of funnel)
+## §4 Client Engine Loader (LOCKED)
 
-`scripts/seo-gen.ts` runs at build (and on catalog change) and emits static pages to `public/seo/` served at `jontrix.app`: **one page per Jont** (`/jonts/{slug}/` — canonical, H1 = name, subtitle = problem statement, FAQ block from the manifest's 3 seeded Q&As, JSON-LD, single CTA to `app.jontrix.app`), **one page per cluster** (`/collections/{cluster}/` — the 7 cluster averages and member lists from the frozen file), and **one page per (zone × top-query)** pairing derived from the registry's `seo_json` (VOL-04 §2) — roughly 247 + 7 + ~40 pages, each internally linked from its Jont page. Every page: canonical URL, `sitemap.xml` regenerated per deploy, `Last-Modified` honest, and **zero** thin-content pages (each carries the evidence paragraph, the FAQ, and real interlinks — Google-thin content is a C8 violation too). `seo_query` values from the frozen file are the only keyword sources; the agent does not invent keywords. **MUST:** every SEO page renders identically with JS disabled (static HTML first). **NEVER:** a doorway page cluster targeting one query stem with cosmetic variants, hidden text, or a canonical pointing anywhere but itself.
+Engines are static ES modules + WASM in `apps/pwa/src/jonts/` and `src/engines/`, loaded lazily per Jont page, executed inside a **Web Worker** with a 2 GB memory guard and a cancellable job object (the `concurrent_jobs` limit applies client-side too: Free = 1). The loader contract: fetch engine by content-hashed URL → instantiate WASM → stream inputs (File API) → post progress → return result bytes; results render locally; nothing uploads unless the user saves a result to history (server Jonts excepted — they inherently hit `/api/jonts/{id}/run`, VOL-05 §4). **MUST:** the loader checks entitlement *only* for saving/presets on PRO-fit client Jonts (UI-level gate, VOL-01 §4.4) — execution itself is never blocked client-side; **NEVER** a client engine fetching an AI provider directly (fuzzy steps go through the platform's AI router, VOL-05 §10, so keys and quotas stay server-side).
 
-## §6 Entitlement Surfaces in the PWA (thin, honest, cached)
+## §5 Programmatic SEO (LOCKED)
 
-The PWA consumes entitlements through three hooks and nothing else: `useEntitlement()` (60-second cached `Entitlement`, VOL-05 §6), `useQuota()` (live counters for the honest "X of Y today" meter in the workbench header), and `useGate(jont)` (the §2 decision). The account panel: login (VOL-06 §1), tier + window + renewal date, quota meters, MCP connect card (the VOL-10 §9 three-step onboarding, verbatim), and the PWA pricing page rendering `plans` from `/api/config` with the Stars dual-price row (VOL-01 §5.2). Upgrade CTAs deep-link: PRO/MAX gates link to the pricing page; MCP quota exhaustion links to the same page with `#mcp`. **MUST:** every quota meter shows real numbers and reset time. **NEVER:** an interstitial nag, an upgrade toast more than once per session, or pricing text hard-coded in the PWA bundle.
+One page per Jont (from the manifest + card fields: problem statement, I/O contract in plain language, FAQ of 3 honest questions) and one hub per family. Generation is build-time (`scripts/seo-gen.ts`) → `public/seo/`, canonical URLs absolute, `sitemap.xml` from the `jonts` registry (VOL-05 §7), robots allows all. Copy rules: E1/E2 claims only (VOL-02 §7), the tier badge shown on the page ("Free to run · save results from Pro"), **NEVER** doorway spam — every page must contain the tool itself (client-side) or a working preview (server-side), because the page *is* the product for Free Jonts. Lighthouse ≥ 90 performance + accessibility on the home page and one Jont page is the Phase-4 exit condition (VOL-00 §0.3).
 
-## §7 Acceptance Tests — PWA (Phase-4 exit gate)
+## §6 Dashboard Details (LOCKED)
+
+Quota meters show `base`, `boost`, `effective`, `remaining`, `resets_at` from the envelope (VOL-01 §4.3) — Boost values render as "from ads" in the PWA (granted in the Mini App; the PWA displays, never grants). History list respects retention horizons and shows "hidden by downgrade" rows as locked-but-present (VOL-01 §4.4). The tokens screen implements the D-04 factory ceremony exactly: creation modal shows the secret once with a copy button and a "I stored it" acknowledgment; PAT rotation requires typing `ROTATE` (VOL-05 §6); AAT list shows last-used and per-token usage sparkline from `/api/v1/tokens` metadata. Billing section is read-only status (tier, source, window ends, reminder schedule) — checkout buttons deep-link to the USDT invoice flow (§4 of VOL-06) or instruct Mini-App purchase for Stars.
+
+## §7 Service Worker, Offline, Performance (LOCKED)
+
+SW strategy: app shell + engines = stale-while-revalidate; catalog JSON = network-first with 1 h cache; API calls = network-only (never cache quota/auth answers). Offline behavior: client-side Jonts already installed run offline; server-side Jonts show an honest offline card. Install prompt follows stock PWA criteria; the About screen renders `VERSION` (build-time injection, VOL-03 §2). **MUST:** Lighthouse budgets enforced in CI; **NEVER** a breaking SW update without a version-matched cache purge keyed on `VERSION`.
+
+## §8 Acceptance Tests
 
 | # | Given | When | Then |
 |---|-------|------|------|
-| T7.1 | Fresh visitor | Lighthouse audit on home + one Jont page | performance ≥ 90, accessibility ≥ 90, best-practices ≥ 90 |
-| T7.2 | U-FREE | opens PRO-fit Jont page | value preview renders; engine not fetched; gate names tier + price from `/api/config` |
-| T7.3 | Any tier | runs a 500 MB NDJSON Jont | streaming progress; UI responsive; cancellation frees memory within 2 s |
-| T7.4 | U-PRO at 500/500 daily calls | 501st server call | envelope 402 `QUOTA_EXCEEDED`; meter shows reset time; no engine or data left the browser |
-| T7.5 | Offline, warm cache | opens a client-side Jont | fully functional; banner states offline honestly; server Jonts explain why they're unavailable |
-| T7.6 | Bot crawler | fetches `/jonts/{slug}/` for all 247 slugs | 200, canonical self, JSON-LD valid, zero 404s; sitemap lists all pages |
-| T7.7 | U-PRO | chains Jont A → B on a 50 MB file | no re-upload; breadcrumb shows both; intermediate never hits disk or network |
-| T7.8 | Any visitor | views about screen | version matches deployed `/health` `meta.version` exactly |
+| T7.1 | U-FREE, client-side Free Jont | run with airplane mode on | completes locally; nothing in the network tab but static assets |
+| T7.2 | U-FREE, PRO-fit client Jont | run | executes (UI-level gate only); save preset → upgrade card; no server execution refusal |
+| T7.3 | U-FREE, MAX-fit server Jont | run | first-N preview renders; full run → 402 + `upgrade_url` + reset time |
+| T7.4 | Any user | open `/pricing` | values match `plans` seed byte-for-byte (T1.10 shared) |
+| T7.5 | Any user | `/about`, envelope header, `/health` | all three show the same `VERSION` string |
+| T7.6 | Session user | create AAT via factory | shown-once ceremony; token appears with last4; `mcp_aats_max` enforced at limit |
+| T7.7 | Session user | rotate PAT | type-`ROTATE` gate; old secret dead ≤ 60 s (T5.5 shared) |
+| T7.8 | Fresh visit, consent unset | onboarding card | shows once; "decide later" → `denied`, re-ask in 7 days (T5.8 shared) |
+| T7.9 | Home + one Jont page | Lighthouse CI | performance ≥ 90, accessibility ≥ 90 |
+| T7.10 | Boost-granted Free user | PWA quota chip | shows +20 "from ads" honestly; no Boost button exists on the PWA |
+
+**DoD hooks (VOL-14):** "Lighthouse gates green" (G-06), "C6 leak test: client Jonts make zero API execution calls" (G-07), "token factory ceremony + consent card verified in UI" (G-23), "SEO pages render with canonicals + sitemap" (G-08).

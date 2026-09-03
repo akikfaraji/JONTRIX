@@ -1,41 +1,42 @@
-# Volume 9 — Chrome Extension (MV3)
+# Volume 9 — Chrome Extension (S3)
 
 **Document:** JONTRIX Build Specification — VOL-09
+**Publisher:** Fraziym Soft
 **Version:** 1.0 (2026-09-03)
 **Status:** LOCKED except where marked AGENT CHOICE
-**Depends on:** VOL-01 §2 (surface S3), VOL-05 (envelope), VOL-06 §1 (identity). Referenced by: Phase 7, VOL-12 (CORS Echo `J-`, cURL-to-Code cards).
+**Depends on:** VOL-00 (C3, C6), VOL-01 §2.2 (surface), VOL-05 (routes, envelope), VOL-06 §2 (session auth). Referenced by: VOL-12 (extension-exposed flags), VOL-14 (DoD).
 
 ---
 
-## §1 Manifest and Permissions (minimum viable, honestly explained)
+## §1 Scope (LOCKED)
 
-MV3 manifest contract: `name` "JONTRIX — one subscription, every tool"; `version` derived at build from `VERSION` (VOL-03 §5; Chrome requires semver, so the mapping `V00.01.003-beta-04` → `0.1.3` with stage appended to `version_name`); `manifest_version: 3`; service worker background; `action` popup; `options_page` (account + connect card); `host_permissions` limited to the platform origins (`https://api.jontrix.app/*`, `https://mcp.jontrix.app/*`) — **no** `<all_urls>`; `storage` for session state; `contextMenus` for the right-click surface; `activeTab` instead of broad content-script access, requested per-interaction so the permission prompt is honest (C8). The Chrome Web Store listing ships with a permissions justification paragraph quoting exactly this section. **MUST:** every permission maps to a named feature in §3–5; the store draft is produced at Phase 7, not at launch. **NEVER:** `tabs`, `webRequest`, `scripting` on all sites, remote-hosted code (MV3 forbids it — all extension code ships in the package), or an update channel outside the store (self-hosted CRX updates require enterprise policy; not our users).
+An MV3 extension ("Right-click → JONTRIX") that runs **server-side Jonts from any origin tab** and deep-links to client-side ones on the PWA. It is a distribution channel (C3: the store listing is permanent free shelf space) and a retention surface; it is **not** a second product — no business logic beyond calling the platform API (VOL-01 §2.2). Bundle discipline: Preact only where needed (popup), no framework in the service worker, **zero ad code** (D-02), zero telemetry (C8).
 
-## §2 Background Service Worker (the API client)
+## §2 Architecture (LOCKED)
 
-The service worker owns three jobs: **session** — stores the platform session (VOL-06 §1 login via `chrome.identity.launchWebAuthFlow` against the PWA's auth callback, or an in-popup Telegram widget handoff; AGENT CHOICE between the two, decided once and recorded), refreshes it on the rolling 30-day window, and clears it on logout; **dispatch** — the single function that calls `POST /api/jonts/{slug}/call` with the VOL-05 envelope, injecting credentials and mapping §8 error codes to user-facing strings; **quota cache** — a 60-second entitlement snapshot per VOL-05 §6 so the popup renders meters without a network round-trip. The worker is event-driven and short-lived (MV3 lifecycle): every job is resumable from `chrome.storage.session`, and no job assumes the worker stays alive across awaits longer than a fetch. **MUST:** every extension API call carries `client: extension` in its meta so `jont_usage.source='extension'` attribution works (VOL-04 §2). **NEVER:** a long-lived alarm that pings the API (extension polling is halved in conservative brake mode, VOL-01 §6, and zeroed in read-only), or credentials in `chrome.storage.local` (session storage only — memory-backed, clears on browser exit).
+Three surfaces in one MV3 package: **service worker** (all API calls, quota cache, context-menu routing), **popup** (catalog search, quota chip, quick-run of the last-used tool), **content script** (selection capture, page metadata, result overlay injection — declared `host_permissions: <all_urls>` only for the overlay; API calls never read page data the user did not select). Auth reuses the **same session cookie** as the PWA: `fetch` from the service worker with `credentials: 'include'` against `api.jontrix.app` under `host_permissions` — no new token kind, no PAT in the extension (PATs are terminal credentials, D-03), no AAT here (AATs are for agents, VOL-10 §2). Login = `chrome.identity.launchWebAuthFlow` opening `app.jontrix.com/auth/extension`, which sets the cookie and closes.
 
-## §3 Popup and Context Menu (the right-click surface)
+## §3 Features (LOCKED)
 
-Popup (≤ 360 px wide): signed-out state shows the one-screen login; signed-in shows tier, daily quota meter, and the last 5 Jont results; a search box filters the catalog (same registry source as `/jonts`, VOL-08 §1) and pins 3 favorites. Context menu: "JONTRIX →" on selections, links, images, and the page itself, each mapping to the manifest-declared quick-actions (e.g. selection → "convert with…", link → cURL-to-Code on API docs, image → Media-zone Jonts). Quick-actions open either inline results in the popup (small outputs) or a Jont page in `app.jontrix.app` with the payload handed over via a one-time, 30-second, single-use handoff token — large files always go through the PWA (the extension is a launcher and lightweight runner, not a second workbench). **MUST:** the context menu degrades gracefully when no handler matches (no dead items); the popup shows the honest quota numbers from the cached snapshot with reset time. **NEVER:** a popup that fetches on every open (cache-first), a handoff token valid twice, or content extracted from a page without `activeTab` granted for that interaction.
+**Context menu:** selection → 10 pinned quick tools (the extension-exposed set from the `jonts` registry flag, VOL-12) + "More JONTRIX tools…" (opens the PWA search). **Popup:** quota block (base/boost/effective, reset time), last-run history (local, device-only), catalog search with deep links. **Overlay:** results render in a shadow-DOM card anchored to the selection, with copy/export buttons and the same honest 402/429 copy as the PWA. **MUST:** every run shows which Jont ran, its tier badge, and the reset time after a cap; **NEVER** auto-running anything on page load, never a content script that scrapes without selection, never an overlay ad or promo banner (C8).
 
-## §4 Server-Jont Proxy from Any Origin (the Phase-7 exit capability)
+## §4 Rate and Brake Behavior (LOCKED)
 
-The extension's distinct power: run **server-side** Jonts from any origin tab without the page's CORS cooperating — because the call goes extension → `api.jontrix.app` (extension origin, platform host_permissions), never page → API. Two Jonts anchor this (both are VOL-12 cards and Phase-3/7 fixtures): **CORS Echo** (from DV-B3, the "biggest traffic pool" row): given a URL + method + headers, the server-side engine performs the request server-to-server and returns status, response headers, and a CORS diagnosis (which header is missing, why the browser refused) — the developer's "why is my fetch failing" answer in one call; **cURL-to-Code** (from DV-B5): given a copied cURL command, the deterministic parser produces fetch/axios/Python-requests/Go snippets (VOL-11 §4 converter pattern) with an optional AI fallback only for exotic flags (VOL-05 §5). The content-script bridge (when `activeTab` is granted) can capture "the failing request as cURL" from DevTools-adjacent context and hand it to cURL-to-Code — this chain is the extension's wedge into the DevTools zone. **MUST:** proxied calls obey the same gates, quotas, and ledgers as every other surface (no extension free lunch); request bodies from pages are never persisted (§2 storage rule). **NEVER:** an open proxy (the extension calls JONTRIX server-side Jonts only, and CORS Echo refuses private-network targets per the Jont card's SSRF guard — VOL-12 card contract), or a bypass that sends page data anywhere but `api.jontrix.app`.
+The extension is a first-class metered client: every run passes the same middleware (VOL-05 §5); burst and 402/429 render in the overlay. In **conservative mode** (VOL-01 §6) the extension halves its polling and disables background prefetch; in **read-only mode** it queues nothing and says so. **MUST:** the quota cache in the service worker honors envelope `version` bumps within 60 s; **NEVER** a client-side grace invention (the gateway's honesty rule, VOL-10 §7, applies here too).
 
-## §5 Store Listing and Update Discipline
+## §5 Store Listing (LOCKED)
 
-Assets produced at Phase 7: 128/440/920 px icons, 1 small + 3 large screenshots (popup, context menu, a Jont result), the honest one-paragraph description (no superlatives C8 forbids), and the privacy policy page (static, on `jontrix.app/legal/extension-privacy`) stating: session token storage, per-call payloads processed and not retained, no browsing-history access. Updates ride the store with the derived semver; `version_name` carries the full FRAZIYM string for support identification. Store review notes pre-answer the three questions reviewers ask: single purpose (toolbox launcher for the user's own account), permissions justification (§1), remote code (none). **MUST:** the listing version and `/health` version match at every submission. **NEVER:** a listing claim the product doesn't honor (C8), or a submission without the privacy policy URL live.
+Assets at build time: 128/440 icons, 5 screenshots (single-tool story, chain story, quota honesty, MCP teaser, privacy line), 132-char summary, description that cites only E1/E2 research patterns (VOL-02 §7). Privacy tab: "no data collection; server-side tools process only what you select; files for client-side tools never leave the browser" — every claim must trace to the spec (C8). Category: Productivity. The listing ships in the Phase-7 exit checklist (VOL-00 §0.3).
 
-## §6 Acceptance Tests — Extension (Phase-7 exit gate)
+## §6 Acceptance Tests
 
 | # | Given | When | Then |
 |---|-------|------|------|
-| T9.1 | Unpacked build | loads in Chrome stable | zero errors; MV3 warnings clean; version fields match `VERSION` mapping |
-| T9.2 | Signed-out | popup login | session issued via chosen flow; popup shows tier + quota within 2 s |
-| T9.3 | Any page (Phase-7 exit) | runs CORS Echo + cURL-to-Code from the context menu on a foreign-origin tab | both return envelope results; `jont_usage.source='extension'`; page's own CORS irrelevant |
-| T9.4 | U-FREE at daily cap | 26th server call from extension | 402 surfaced in popup with reset time; no retry loop |
-| T9.5 | Browser restart | reopen popup | session survives (rolling window) or re-prompts honestly at expiry; quota cache rebuilds ≤ 2 s |
-| T9.6 | Read-only brake (VOL-01 §6) | any server Jont attempt | `TOOL_UNAVAILABLE` with `resets_at`; extension shows banner; polling already at zero |
-| T9.7 | cURL input with exotic flag | cURL-to-Code | deterministic parse where covered; AI fallback only for the flagged portion; cache hit on second run |
-| T9.8 | Handoff token | reused after 30 s or twice | rejected both times; popup explains and re-issues on demand |
+| T9.1 | U-PRO, any origin tab | select text → quick tool | result overlay in < 5 s; run metered in `jont_usage` with `source='extension'` |
+| T9.2 | U-FREE at daily cap | same run | 402 copy + reset time in overlay; no retry loop |
+| T9.3 | Logged-out extension | any run | login deep-link; after auth, cookie present; no token stored in `chrome.storage` |
+| T9.4 | Client-side-only Jont | invoked from extension | deep-links to the PWA page (extension never bundles client engines — one runtime, VOL-11) |
+| T9.5 | Read-only brake mode | extension run | honest queue-free refusal with reset time |
+| T9.6 | Extension bundle | grep | no ad SDK, no analytics, no version literal outside the injected one (VOL-03 §2) |
+
+**DoD hooks (VOL-14):** "extension loads unpacked + runs two server Jonts from any origin" (Phase-7 exit, G-09), "store assets + privacy claims trace to spec" (G-27), "no telemetry in extension bundle" (G-32 shared).

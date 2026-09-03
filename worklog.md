@@ -212,3 +212,23 @@ Stage Summary:
 - FRAZIYM versioning canon: src/version.ts single source, VPP.FF.BBB-STAGE-RR, launch targets V01.00.000 stable; every surface/health endpoint/CHANGELOG reports the same string.
 - MCP architecture canon (founder-mandated): /api/mcp/login (PAT/AAT paste or sign-in) + jontrix-gateway (npm/PyPI/binaries) device-flow login, stdio bridge, keyring, quota pre-flight.
 - Spec is now build-ready for an autonomous agent; cross-references verified (VOL-00 §0.3 phases ↔ volume exit conditions ↔ acceptance tables).
+
+---
+Task ID: 9
+Agent: main (Super Z)
+Task: Founder review round (chat decisions D-01..D-06) + write all remaining spec volumes (VOL-02..09, 11..16) in contracts-only style.
+
+Work Log:
+- Chat-locked founder decisions: Free MCP 40/mo (D-01); Ads = Option B rewarded-only Boost in MiniApp (D-02); PAT = one per user, full read/write data-plane via /api/v1/*, rotate/revoke, never on MCP (D-03); dashboard = only token factory for PAT+AAT, device-approval page = dashboard surface (D-04); AI-training consent default-denied with versioned re-ask + audit (D-05); new VOL-16 terms/ecosystem volume (D-06).
+- Patched VOL-00: volume count 15→16, Phase 8 exit rewritten (AAT-only MCP + PAT rejected), added §0.9 Founder Decision Register.
+- Patched VOL-01: Limits contract (+mcp_pats_max=1, +ad_boost_daily_calls_max, MCP 40), tier matrix rows (40 / PAT row / boost ceiling), §4.3 boost counter semantics, new §5.5 Ads Option-B section (+§5.6 renumber), tests T1.13–T1.15, DoD hooks line.
+- Patched VOL-10: §2 token taxonomy rewrite (PAT data-plane-only, AAT dashboard-factory, sess), TokenScopes minus cascade, §3.1/3.2 flow rewrite, route table (token CRUD moved to /api/v1/tokens), §4.4 pointer, §4.6 kind-check in pipeline, §4.10 TOKEN_KIND_MISMATCH row, §4.9 discovery data_plane block, §5.2 verbs (me/export P1, tokens verb removed), §6 unified tokens table ref, §8 invariant #11 kind isolation, §9 copy, tests T10.2b/T10.12b/T10.15.
+- Wrote new volumes: 04 (schema incl consent_events/boost_ledger/audit_log, unified tokens table), 05 (envelope, /api/v1 PAT data plane, token factory §6, consent §8, error taxonomy, AI router), 03 (monorepo, version plumbing incl npm/PyPI derivation), 06 (auth, Stars+USDT, entitlement sync state machine, Paddle fallback, payouts), 02 (research digest, driver rows), 07 (PWA, token factory UI, consent card, SEO), 08 (bot/MiniApp, §5 AdsGram Boost full mechanics), 09 (extension, cookie-shared session), 11 (manifest, 5 patterns, dispatch, chaining, harness), 12 (all 50 cards from frozen JSON, tier census 18/28/4), 13 (long-tail 197 in 7 family batches with real counts, fixture policy), 16 (ToS skeleton, AUP, privacy, AI-training consent contract, token rules, enforcement), 15 (ledger: statements, ads/eCPM kill-switch, costs/C1, payouts), 14 (39 DoD checks G-01..G-39, CI/CD, FRAZIYM release tree, watchdog, 10-min-week ops, launch).
+- Cleaned 8 stale pre-correction volumes from spec/ and download/spec/; kept valid catalog/jonts.seed.json (247 rows, 155/79/13 verified).
+- Audits: 0 leftover 100-quota/cascade/mcp_tokens/old-verb refs; VERSION literal only in VOL-00; no function/class bodies in fenced blocks (all >5-line blocks are allowed contract/layout blocks); every volume has acceptance tests + DoD hooks (VOL-00 by design exempt).
+- Copied all 17 volumes to download/spec/ as JONTRIX_SPEC_VOL-XX_*.md.
+
+Stage Summary:
+- Complete spec system: 17 volumes (00–16), ~34.4k words, contracts-only style, founder decisions D-01..D-06 propagated everywhere.
+- Canonical filenames in download/spec/; spec/ is the repo copy per VOL-00 §0.4.
+- Cross-volume consistency verified by grep audit; seed JSON validated against tier census.

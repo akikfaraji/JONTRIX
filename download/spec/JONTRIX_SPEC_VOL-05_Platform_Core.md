@@ -1,68 +1,123 @@
-# Volume 5 — Platform Core: Router, Auth, Middleware, AI Router, Errors
+# Volume 5 — Platform Core (API Worker, Middleware, Data Plane)
 
 **Document:** JONTRIX Build Specification — VOL-05
+**Publisher:** Fraziym Soft
 **Version:** 1.0 (2026-09-03)
 **Status:** LOCKED except where marked AGENT CHOICE
-**Depends on:** VOL-01 §4 (limits/counters), VOL-04 (schema). Referenced by: VOL-00 C7 (AI router = §5), VOL-06 (auth), VOL-07/08/09 (consumers), VOL-10 §4.10 (error codes).
+**Depends on:** VOL-00 (constraints, versioning), VOL-01 §4 (entitlements), VOL-04 (schema), VOL-10 §2/§4.4 (token kinds). Referenced by: VOL-06 (billing), VOL-07/08/09 (surfaces), VOL-11 (dispatch), VOL-14 (DoD).
 
 ---
 
-## §1 Request Lifecycle and the Response Envelope
+## §1 The API Worker's Shape (LOCKED)
 
-Every API request follows one lifecycle, in order, and every handler can assume the steps before it succeeded: **(1)** the router matches method + path and binds the app's typed `Env`; **(2)** the request-id middleware attaches a fresh `req_<16 hex>` id and starts the clock; **(3)** auth resolves the caller (session cookie for browser surfaces, bearer for MCP/extension) or records `anonymous`; **(4)** entitlements load or construct the caller's `Entitlement` (VOL-01 §4.1) and the matched Jont's manifest; **(5)** the quota/rate stage runs the atomic check-and-increment (§6); **(6)** the handler executes and returns through the envelope; **(7)** the ledger stage appends `jont_usage` (calls) or `usage_ledger` (events) asynchronously — never blocking the response on the write, but never dropping it silently either (a failed ledger write retries once, then logs to `usage_ledger` itself as a `ledger_write_failed` event). Responses always wear one envelope:
+One Worker (`apps/api`, `api.jontrix.app`) is the whole platform core: router → middleware chain → route handler → envelope. The middleware chain is fixed and ordered — **CORS → request-id → burst (KV) → auth → kind check → entitlements (check-and-increment where metered) → handler → envelope → log**. A request that fails at any stage never reaches the next one, and failures return the §9 taxonomy with the request id attached. **MUST:** every route in this volume and in VOL-06/07/08/09 is served by this one worker; the MCP worker (VOL-10) shares the same D1 and library code but not the process. **NEVER:** business logic in middleware; a second auth implementation in any surface client.
 
-```json
-{ "ok": true, "data": { }, "meta": { "version": "<VERSION>", "request_id": "req_…", "warnings": ["quota_80"] } }
+## §2 Response Envelope (LOCKED)
+
+Every JSON response from the API and MCP workers uses one envelope. Surfaces parse this and nothing else:
+
+```ts
+interface Envelope {
+  ok: boolean;
+  data?: unknown;                 // handler payload on success
+  error?: { code: string; message: string; field?: string; upgrade_url?: string; resets_at?: string };
+  warnings?: string[];            // e.g. ["quota_80"]
+  quota?: { base: number; boost: number; effective: number; remaining: number; resets_at: string };
+  meta: { request_id: string; version: string; ts: number };  // version imported from src/version.ts
+}
 ```
 
-Errors use the same envelope with `ok: false` and `error: { code, message, …context }` per §8. **MUST:** `meta.version` comes from `src/version.ts` (VOL-00 §0.7) on every response, which is how support chats identify the exact build. **NEVER:** a handler bypasses the envelope, a middleware reorders the lifecycle, or a response omits `request_id`.
+**MUST:** `meta.version` is `import { VERSION } from 'src/version.ts'` (VOL-00 §0.7) — it appears in every response, and the DoD proves a response header/meta and `/health` never disagree. **MUST:** the `quota` block renders `base`, `boost`, `effective` separately so ad-boost headroom is always honest (VOL-01 §4.3). **NEVER:** a bare-body response outside this envelope (static assets exempt).
 
-## §2 Router and Middleware Chain (contract)
+## §3 The `/api/v1/*` Data Plane — the PAT Surface (LOCKED, D-03)
 
-The router is a static method+path table compiled at build time — no dynamic route construction, no wildcard catch-alls except the SEO host (VOL-07 §5). Route families: `/health` (§7) · `/api/config`, `/api/status` (§7) · `/api/auth/*` (VOL-06 §1–2) · `/api/billing/*` (VOL-06 §3–5) · `/api/jonts/*` (catalog + call) · `/api/results/*` · `/api/mcp/*` and `/mcp` (VOL-10 §4 — same middleware chain, deployed as the MCP worker). Middleware is a fixed ordered list per route family, declared as data (array of names), so the lifecycle above is auditable in one place; adding middleware mid-list without a decision entry fails review. **MUST:** every route declares its auth level (`public | anonymous-ok | user | pat | aat`), its quota tags (`server_call`, `ai_call`, `mcp_call`, `none`), and its cache policy (§6) in the same table row — the middleware reads the declaration rather than each handler re-implementing it. **NEVER:** CORS headers on the API except the app origin (VOL-10 §8.7), or a route that exists in code but not in the table (CI asserts the table is exhaustive against a route-snapshot test).
+The data plane is the **only** surface a PAT can touch. It exists so a user can pull and manage **their own data** from a terminal, script, or CI with one credential. Auth: `Authorization: Bearer jx_pat_…`; kind check first (any other bearer → `403 TOKEN_KIND_MISMATCH` with `data_plane_only: true`).
 
-## §3 Auth Middleware (contract)
+### §3.1 Route Table
 
-Two credential families, one resolution result: `Caller = { kind: 'anonymous' | 'user' | 'token', user_id?, token_id?, via }`. Browser surfaces resolve an HttpOnly session cookie (`SameSite=Lax`, `Secure`, 30-day rolling expiry, value = random 256-bit id → `sessions` KV-cached row → `users`); MCP/extension resolve `Authorization: Bearer jx_(pat|aat|sess)_…` through the VOL-10 §2 pipeline (hash lookup → status → scope). Session issuance happens only in VOL-06 §1–2 flows; the auth middleware never creates credentials, only verifies them. **MUST:** anonymous callers get a salted IP+UA hash id for quota keying (VOL-01 §4.3) — the salt lives in a Worker secret, the hash is never reversible into an IP, and no anonymous row is ever written to `users`. **NEVER:** the middleware trusts a client-supplied user id, a cookie survives logout (logout deletes the session row and clears the cookie), or a bearer token is accepted on a cookie-auth route (VOL-10 §8.7's bearer-only rule applies to `/api/mcp/call` and, by extension here, to `/api/jonts/*/call` from the extension — same caller contract, both accepted deliberately).
+| Method & path | Reads/Writes | Purpose |
+|---|---|---|
+| `GET /api/v1/me` | R | identity, tier, window, consent state, PAT last4 |
+| `GET /api/v1/quota` | R | same counters block as the envelope, plus MCP monthly |
+| `GET /api/v1/export/history?format=json\|csv&since=&until=&cursor=` | R | history rows within tier retention (Free: empty — 0-day horizon) |
+| `GET /api/v1/export/presets` | R | all presets, JSON |
+| `GET /api/v1/export/results?since=&cursor=` · `GET /api/v1/results/{id}` | R | saved result bodies (R2-streamed when large) |
+| `POST /api/v1/presets` · `PUT/DELETE /api/v1/presets/{id}` | W | preset CRUD (limits per VOL-01 §4.2) |
+| `DELETE /api/v1/history/{id}` · `DELETE /api/v1/results/{id}` | W | targeted deletion (purges R2 body too) |
+| `PATCH /api/v1/settings` | W | non-security settings only (`settings_json` allowlist: theme, locale, default export format) |
+| `GET /api/v1/tokens` · `POST /api/v1/tokens` · `PATCH /api/v1/tokens/{id}` · `DELETE /api/v1/tokens/{id}` · `POST /api/v1/tokens/pat/rotate` | **session only** | the token factory (§6) — a PAT bearer here gets `403 TOKEN_KIND_MISMATCH` |
 
-## §4 Entitlements Middleware (implements VOL-01 §4)
+### §3.2 Behavior Rules
 
-The middleware exposes exactly one decision function to handlers: `gate(caller, tag, jont?) → { allowed: true, entitlement, counters } | { allowed: false, error }`. Internally it: reads `ent:{user_id}` from KV (60 s TTL), falls back to the single `entitlements` PK row (bumping KV only when `version` differs — VOL-04 §3); resolves the Jont's `tier_fit` against the tier map (FREE→all, PRO→pro+, MAX→max); computes the effective counter cap (tier `Limits`, halved for anonymous per VOL-01 §4.3, AAT clamp per VOL-10 §2 when the caller is a token); and performs the atomic check-and-increment on `usage_counters` in one D1 transaction — the guarantee VOL-01 §4.3 demands, so two concurrent calls cannot both consume the last unit. Refusals map to §8 codes: tier miss → `TIER_LOCKED` (402), counter full → `QUOTA_EXCEEDED` (402), burst → `RATE_LIMITED` (429). At 80% of any counter it appends `quota_80` to `meta.warnings` (VOL-01 §4.3) — surfaces render the honest one-time prompt from that warning and from nowhere else.
+**MUST:** pagination is cursor-based, page size 100, `next_cursor` in `data`; exports are stable-sorted by `created_at, id` so a re-run is diffable. **MUST:** CSV export emits a header row and quotes per RFC 4180. **MUST:** PAT writes draw from the same daily server-call quota as app writes (`check-and-increment`, VOL-01 §4.3); PAT **reads** are unmetered but burst-limited at 10 req/10 s with a 2,000 req/day PAT ceiling (`pat_YYYYMMDD` counter) — D1 reads are cheap, runaway loops are not. **NEVER:** password/email change, billing, subscription, token management, account deletion, or consent changes over the PAT (control plane = browser session only, D-03/D-04); a request to any such capability via PAT returns `403 CONTROL_PLANE_LOCKED`. **NEVER:** cross-user access — every query is `WHERE user_id = <token owner>`; there is no admin flag, no impersonation (the founder's own access is the seeded `grant` account + session, C8).
 
-## §5 AI Router (C7: rotate, never exceed)
+## §4 App-Facing REST (session-authenticated)
 
-AI is a fallback for fuzzy steps only (VOL-11 §1), and every AI call is cached. The router holds a provider table seeded from `research/ai-providers.md`: each provider row is `{ id, models, free_daily_estimate, priority }`; AGENT CHOICE governs which 3–5 providers ship at build time from that research, and the table is data (D1 `config` via seed), not code. Selection algorithm, in order: **(1)** exact-cache — the pair (task hash of prompt+model-class+inputs) is looked up in KV/D1 (prompt cache rows in D1 `ai_cache`: `hash PK, response_json, created_at, hits`); a hit returns instantly and increments `hits`. **(2)** health memory — providers with a recent failure (in-memory circuit breaker, 10-minute half-open window) sink in priority. **(3)** rotation — the highest-priority healthy provider with remaining daily headroom; on 429/quota-exhaust or timeout, mark degraded and move to the next. **(4)** give-up — if all providers are degraded or the monthly `ai_calls` counter (VOL-01 §4.2: 0/100/1000/5000) is exhausted, return the deterministic-path error `AI_UNAVAILABLE` with the Jont's deterministic fallback message; the request never queues or waits on AI. **MUST:** every AI call records provider, model, cache status, and latency in `jont_usage.ai_json`; prompts contain user content only for the minimal fuzzy step (never whole files when a slice suffices — VOL-11 §5). **NEVER:** two providers called for one step "for quality", a user's text used for provider-side training promises (only providers whose terms permit API usage without training retention are seeded), or an AI call on a path a deterministic algorithm covers.
+Same worker, same envelope, session cookie auth (VOL-06 §2). Routes: `GET /api/me`, `GET /api/quota`, `POST /api/jonts/{id}/run` (server-side Jonts only — dispatch per VOL-11 §4; client-side Jonts never call this), `POST/GET/PUT/DELETE /api/presets…`, `GET/DELETE /api/results…`, `GET/DELETE /api/history…`, `PATCH /api/settings`, `POST /api/consent` (§8), `POST /api/account/delete` (dashboard only; enqueues VOL-04 §3 tombstone + purge). **MUST:** every metered route goes through the entitlements middleware; **NEVER** a surface-side bypass — the PWA, Mini App, and extension call these routes like any other client (VOL-01 §2.2).
 
-## §6 Rate Limiter and Cache
+## §5 Rate Limiter, Cache, Burst (LOCKED)
 
-Burst limiting: 10 requests / 10 s per bearer-or-session-or-anon-hash, tracked in KV `burst:{key}` (TTL 10 s, ≤2 KV writes per call — the only per-request KV writes in the platform, VOL-04 §3); trips return 429 + `Retry-After: remaining-window-seconds`. Daily counters are D1 (§4), so cap accounting survives KV loss. Caching is a three-layer contract: **edge** — SEO pages and engine assets are static with immutable content-hash headers (VOL-07 §5); **KV** — entitlements (60 s), tool catalog ETag (VOL-10 §4.5), platform config (5 min); **D1** — authoritative rows, never cached longer than their `version` allows. **MUST:** cache invalidation is version-driven — a `version` bump in `entitlements` is the only signal surfaces need, which is why VOL-01 §4.1 made it mandatory. **NEVER:** caching a per-user response at the edge (privacy), writing KV per request beyond the burst exception (cap math), or a cache TTL longer than its contract row above.
+Burst: sliding 10-request/10-second window per bearer/session, keyed in KV `BURST` with 10 s TTL (two KV writes worst-case per call — inside the 1k/day cap because burst entries exist only for active tokens; VOL-01 §4.3). Tier caps: the entitlements middleware performs **one atomic check-and-increment** (D1) per metered call; 80% → `warnings:["quota_80"]`; 100% → `402 QUOTA_EXCEEDED` + `upgrade_url` + `resets_at`; burst → `429 RATE_LIMITED` + `Retry-After`. Cache: KV `ENT` holds the entitlement projection ≤ 60 s, invalidated by `version` bump on every mutating event (VOL-04 §4); **no per-request KV writes, ever**; conservative/read-only brake modes (VOL-01 §6) are flags read from KV `STATE` at request start — flipping them is a watchdog write, not a deploy.
 
-## §7 Health and Utility Endpoints (the Phase-2 three)
+## §6 The Token Factory — `/api/v1/tokens` (LOCKED, D-04)
 
-**`GET /health`** → `200 {"status":"ok","version":VERSION,"env":"production|preview","uptime_hint":…}` — no auth, no DB touch (a deploy-target probe must stay cheap); the watchdog (VOL-14 §6) pings it and the dead-man switch relies on it. **`GET /api/config`** → public platform config for all surfaces: seeded `Plan` rows (prices per VOL-01 §5.5), tier matrix summary, catalog counts by tier, current `brake` mode, and the minimum client versions — one anonymous call lets any surface render correctly without hard-coded prices. **`GET /api/status`** → honest operational status: brake mode, last watchdog run, catalog size, version, and any active incident note (VOL-14 §7); it is the page behind the status link in every surface's footer (C8). All three are envelope responses, all three render `VERSION` from `src/version.ts`.
+The dashboard (session cookie only) is the sole factory. Contract (binding for VOL-10 §4.4):
 
-## §8 Error Taxonomy (LOCKED — the only error codes in the platform)
+| Route | Rules |
+|---|---|
+| `GET /api/v1/tokens` | list own tokens: `id, kind, name, prefix, last4, status, scopes, expires_at, last_used_at` — never secrets |
+| `POST /api/v1/tokens` | `{"kind":"aat","name":…,"scopes":{…TokenScopes…}}` → `201` with secret shown **exactly once**; enforces `mcp_aats_max` (422, tier named); `max_calls_per_day` clamped to tier (422 on over-clamp) |
+| `POST /api/v1/tokens/pat/rotate` | **PAT rotate:** new secret issued + shown once; old secret marked `rotated` and dead ≤ 60 s; audit `token.rotated`; body `{"confirm":"ROTATE"}` required (UI makes old-secret death explicit) |
+| `DELETE /api/v1/tokens/{id}` | revoke any own token; audit `token.revoked`; revoking the PAT leaves the user PAT-less until they create one again (dashboard asks twice) |
+| `PATCH /api/v1/tokens/{id}` | rename or edit AAT scopes → **issues a replacement token** (scope edits never mutate a live secret); old row `rotated` |
 
-| Code | HTTP | Meaning / raised by | Envelope extras |
-|------|------|---------------------|-----------------|
-| `AUTH_REQUIRED` | 401 | no credential where one is required (§3, VOL-10 §4.10) | — |
-| `AUTH_INVALID` | 401 | unknown/revoked/expired session or token | — |
-| `SESSION_EXPIRED` | 401 | browser session past 30-day rolling window | `reauth_url` |
-| `FORBIDDEN_TOOL` | 403 | AAT scope denies the tool (VOL-10 §2) | `token_name` |
-| `TIER_LOCKED` | 402 | tier does not unlock the Jont (§4) | `upgrade_url`, `tier_fit` |
-| `QUOTA_EXCEEDED` | 402 | daily/monthly counter full (§4, VOL-10 §7) | `upgrade_url`, `resets_at` |
-| `RATE_LIMITED` | 429 | burst window tripped (§6) | `Retry-After` |
-| `UNKNOWN_JONT` | 404 | slug not in registry | — |
-| `UNKNOWN_TOOL` | 404 | MCP tool name not in registry (VOL-10 §4.10) | — |
-| `ARGUMENTS_INVALID` | 422 | input fails the manifest `inputSchema` (VOL-11 §2) | `field_paths[]` |
-| `CONFLICT_IDEMPOTENCY` | 409 | in-flight duplicate idempotency key (VOL-10 §6) | `retry_after` |
-| `AI_UNAVAILABLE` | 503 | §5 give-up state | `deterministic_hint` |
-| `TOOL_FAILED` | 500 | Jont engine raised (VOL-11 §3) | `tool_trace_id` |
-| `TOOL_UNAVAILABLE` | 503 | engine asset missing / brake read-only mode | `resets_at?` |
-| `INTERNAL` | 500 | catch-all; detail never leaks internals | `request_id` only |
+**MUST:** creation/rotation responses carry a one-line "this is shown once" warning; **NEVER:** any endpoint here accepts a PAT or AAT bearer (kind check rejects with `403 TOKEN_KIND_MISMATCH`), and no route outside this table mints tokens (VOL-10 §3.1 device-approval page calls `POST /api/v1/tokens` with the user's session cookie — it is a dashboard surface, not a separate API).
 
-**MUST:** every error path in every app raises through this table — new codes require a spec revision, not a handler's whim; messages are human, honest, and actionable (C8), and never include stack traces or internal ids beyond `request_id`.
+## §7 Health, Version, Utility Endpoints (LOCKED)
 
-## §9 Observability and the Platform Test Suite
+`GET /health` → `200 {"status":"ok","version":VERSION,"deps":{"d1":"ok","kv":"ok","r2":"ok"}}` (deps checked with 1 cheap op each; any failure still 200 with `degraded` — the watchdog reads the body, VOL-14 §6). `GET /health/deep` (founder token only) adds row-counts and last-cron timestamps. `GET /robots.txt`, `GET /sitemap.xml` (generated from `jonts.seo_slug`, VOL-07 §5). **MUST:** `/health` and every envelope `meta.version` import the same `VERSION` — a build-time grep proves no other version literal exists (VOL-00 §0.7).
 
-Logging is structured JSON lines with `request_id`, route, caller kind, and outcome — payload bodies never (VOL-10 §8.8 extends platform-wide). Metrics derive from the ledgers, not from a metrics vendor (C1): `usage_ledger` answers "what happened", `jont_usage` answers "how much", and the hourly watchdog (VOL-14 §6) turns both into the daily digest posted to the founder's Telegram. The platform test suite `tests/platform/` (Phase-2 exit gate) covers, minimum: envelope shape on success and on every §8 code; the atomic counter race (two parallel calls, one unit left — exactly one wins); KV-outage fallback (entitlements resolve from D1, burst fails open to D1 counting); anonymous halving; brake modes' effect on dispatch; and the version-hygiene assertion reused from VOL-00 §0.7. All fixtures come from `tests/fixtures/` (VOL-03 §6); no test touches a live third party.
+## §8 Consent and Settings Endpoints (LOCKED, D-05)
+
+`POST /api/consent` (session only): `{"consent":"granted"|"denied","policy_version":N,"surface":"onboarding"|"settings"|"re-ask"}` → updates `users.ai_training_consent` + writes `consent_events` in one transaction (VOL-04 §5) and returns the new state. `GET /api/consent` returns current state + current published policy version (VOL-16 §6). **MUST:** onboarding surfaces show the consent card once (`consent_asked_at IS NULL`); "decide later" leaves state `denied` and re-prompts after 7 days; a published policy bump (`policy_version` > user's `consent_version`) triggers the re-ask banner on next visit — never an automatic flip. **NEVER:** training-pipeline queries (VOL-16 §6) read any row whose owner's consent ≠ `granted` at export time; consent data is excluded from PAT exports (it is account state, not user content — `/api/v1/me` shows it read-only).
+
+## §9 Error Taxonomy (LOCKED)
+
+| HTTP | `code` | Meaning / notes |
+|---|---|---|
+| 400 | `BAD_REQUEST` | malformed JSON/query; message names the field |
+| 401 | `AUTH_REQUIRED` / `AUTH_INVALID` | missing bearer/cookie · unknown, revoked, rotated, or expired credential |
+| 402 | `TIER_LOCKED` + `upgrade_url` | tool exists, tier does not unlock (VOL-01 §4.2) |
+| 402 | `QUOTA_EXCEEDED` + `upgrade_url` + `resets_at` | cap reached — tier cap, never burst |
+| 403 | `TOKEN_KIND_MISMATCH` | right secret, wrong surface (PAT on MCP, PAT on token factory) |
+| 403 | `CONTROL_PLANE_LOCKED` | PAT attempted a control-plane action (§3.2) |
+| 403 | `FORBIDDEN_TOOL` | AAT scope deny (VOL-10) |
+| 404 | `NOT_FOUND` / `UNKNOWN_TOOL` | generic / catalog miss |
+| 409 | `CONFLICT_IDEMPOTENCY` | replay during in-flight execution (VOL-10 §4.6) |
+| 422 | `ARGUMENTS_INVALID` + field | schema validation failure |
+| 422 | `LIMIT_REACHED` | preset/AAT count caps (message names tier) |
+| 429 | `RATE_LIMITED` + `Retry-After` | burst window or read-only brake mode |
+| 5xx | `TOOL_FAILED` / `TOOL_UNAVAILABLE` / `INTERNAL` | execution, upstream, or bug (trace id in `meta.request_id`) |
+
+**MUST:** every 4xx/5xx is loggable without payloads (VOL-04 §5 audit rule); **NEVER** a 500 for a user error — if it can be caused by input, it is 4xx.
+
+## §10 AI Router (FALLBACK wiring only)
+
+The API exposes the AI fallback the runtime (VOL-11 §1) may call for fuzzy steps: provider order is a static list in config (deterministic-first is the runtime's law; AI is a capped fallback), keys live in Worker secrets, calls are cached by `(prompt-hash, model)` in KV `STATE` with 30-day TTL, and each call check-and-increments `ai_YYYYMM` against the tier's `ai_fallback_calls_per_month` (0 on Free — the middleware refuses before any provider contact). Provider ToS discipline is C7; no provider is called when the cache hits. Full provider table and pricing guards: VOL-15 §5.
+
+## §11 Acceptance Tests
+
+| # | Given | When | Then |
+|---|-------|------|------|
+| T5.1 | Any endpoint | inspect envelope | `meta.version` == `VERSION` from `src/version.ts`; `/health` matches byte-for-byte |
+| T5.2 | U-PRO PAT | `GET /api/v1/export/history?cursor=…` | 100-row pages, stable order, `next_cursor` terminates; Free account gets empty `data` + honest copy |
+| T5.3 | U-FREE PAT | 3rd Boost-less day, 13th PAT write | 402 `QUOTA_EXCEEDED` with `resets_at` (writes share daily quota); reads still 200 |
+| T5.4 | PAT | `POST /api/v1/tokens` | `403 TOKEN_KIND_MISMATCH`; audit row written |
+| T5.5 | Session | rotate PAT | new secret shown once; old secret `AUTH_INVALID` ≤ 60 s later; `token.rotated` audited |
+| T5.6 | U-MAX AAT clamp 100/day | 101st AAT call | 402 with `aat_clamp` named; tier quota unchanged |
+| T5.7 | Free user | `POST /api/jonts/{id}/run` on MAX-fit tool | 402 `TIER_LOCKED` + `upgrade_url`; no metering |
+| T5.8 | Consent flow | grant → deny → policy bump → re-ask | state transitions audited; export pipeline sees denied; re-ask banner shows; no auto-flip |
+| T5.9 | Any user | quota envelope | `base`/`boost`/`effective` reported; after 2 boost grants effective = 45 on Free |
+| T5.10 | AI fallback on Free | fuzzy step requests AI | refused before provider contact (`ai_fallback_calls_per_month = 0`); deterministic path or clean error |
+
+**DoD hooks (VOL-14):** "envelope + version hygiene proven" (G-05), "data-plane isolation (PAT vs session vs AAT) green" (G-13), "consent endpoints + audit green" (G-22), "brake modes flip without deploy" (G-14).

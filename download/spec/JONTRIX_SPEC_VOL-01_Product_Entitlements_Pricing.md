@@ -26,7 +26,7 @@ The personas below are the only marketing segments this spec recognizes; every s
 
 1. **The Data Wrangler (prosumer).** Has bank-statement PDFs, exports, CSVs, invoices; needs them converted, cleaned, merged. Pain cluster: Data & Repair (average score 6.87, the highest cluster). Willingness to pay is proven by DR-F1 (bank-statement PDF→CSV, 8.03) and the per-tool replacement costs in the research ($49.95/mo DocuClipper class). Finds JONTRIX via SEO landing pages; converts on the PWA; pays USDT.
 2. **The SMB Operator.** Runs a small commerce or service business (Ecom cluster 6.44): invoice matching (EC-C21, 7.58), WhatsApp order triage (EC-C29, 7.55), catalog feeds. Low technical skill, mobile-first, lives in Telegram. Finds JONTRIX through the Mini App or a bot share; pays in Stars because it is one tap.
-3. **The Agent Operator.** A developer or power user driving Claude, Cursor, or another MCP client. Pain cluster: DevTools (6.23), with DV-B1 (large-JSON crashes, 7.58) as the wedge. Never opens a browser if an agent can do the work; installs `jontrix-gateway`, authenticates with a PAT/AAT (VOL-10), and consumes Jonts as MCP tools. Pays USDT for quota; this persona is why MCP exists as a first-class surface.
+3. **The Agent Operator.** A developer or power user driving Claude, Cursor, or another MCP client. Pain cluster: DevTools (6.23), with DV-B1 (large-JSON crashes, 7.58) as the wedge. Never opens a browser if an agent can do the work; installs `jontrix-gateway`, authenticates with an **AAT** (VOL-10 §2 — the only token kind agents can use), and consumes Jonts as MCP tools. Pays USDT for quota; this persona is why MCP exists as a first-class surface.
 
 ### §2.2 Surfaces (LOCKED)
 
@@ -37,7 +37,7 @@ All four surfaces are in scope for the one-shot build. A surface is a *client* o
 | S1 | **PWA** (app.jontrix.app + SEO pages) | VOL-07 | Data Wrangler | Telegram Login / email OTP | USDT | Programmatic SEO pages are the top of funnel; client-side WASM engines run here by default (C6). |
 | S2 | **Telegram Mini App** (inside @JONTRIX_bot) | VOL-08 | SMB Operator | Telegram-initiated | **Stars** | Impulse-purchase surface; Stars checkout is native here; receipt + re-engagement via bot. |
 | S3 | **Chrome Extension** (MV3) | VOL-09 | Data Wrangler / Agent Operator | Same account token | USDT | "Right-click → JONTRIX" on any page; runs server-side Jonts from any origin; store listing is a distribution channel (C3). |
-| S4 | **MCP via jontrix-gateway** | VOL-10 | Agent Operator | PAT / AAT (`/api/mcp/login`) | USDT | The gateway is a small installable CLI (npm/PyPI/binaries) that logs in once and proxies MCP stdio ↔ HTTPS thereafter. |
+| S4 | **MCP via jontrix-gateway** | VOL-10 | Agent Operator | **AAT** via `/api/mcp/login` (PAT is data-plane only — VOL-10 §2, Decision D-03/D-04) | USDT | The gateway is a small installable CLI (npm/PyPI/binaries) that logs in once and proxies MCP stdio ↔ HTTPS thereafter. |
 
 **MUST:** every surface enforces the same entitlements (§4) by calling the shared middleware; a tier bought on Stars must light up the PWA, the extension, and MCP within 60 seconds (VOL-06 sync contract). **NEVER:** a native mobile app, an Electron desktop app, or any second web property — these are out of scope (§7) and violate the maintenance budget (C4).
 
@@ -74,8 +74,10 @@ interface Limits {
   max_upload_mb: number;                    // 2 | 25 | 100 | 100
   batch_rows_max: number;                   // 100 | 5000 | 50000 | 250000
   concurrent_jobs: number;                  // 1 | 2 | 5 | 10
-  mcp_calls_per_month: number;              // 100 | 2000 | 10000 | 100000
+  mcp_calls_per_month: number;              // 40 | 2000 | 10000 | 100000   (D-01: Free = 40)
   mcp_aats_max: number;                     // 1 | 3 | 10 | 9999  (9999 = "unlimited")
+  mcp_pats_max: number;                     // 1 | 1 | 1 | 1       (D-03: exactly one PAT per user, every tier)
+  ad_boost_daily_calls_max: number;         // 20 | 0 | 0 | 0      (D-02: rewarded-ad bonus, Free only)
   ai_fallback_calls_per_month: number;      // 0 | 100 | 1000 | 5000
   history_days: number;                     // 0 | 90 | 365 | 36500
   presets_max: number;                      // 3 | 50 | 9999 | 9999
@@ -106,8 +108,10 @@ Four tiers, monthly prices anchored to the per-tool replacement costs in the res
 | Max upload (server-side Jonts) | 2 MB | 25 MB | 100 MB | 100 MB |
 | Batch rows per job | 100 | 5,000 | 50,000 | 250,000 |
 | Concurrent jobs | 1 | 2 | 5 | 10 |
-| **MCP calls / month (via gateway)** | 100 | 2,000 | 10,000 | 100,000 |
+| **MCP calls / month (via gateway)** | 40 | 2,000 | 10,000 | 100,000 |
 | **MCP AATs (agent tokens)** | 1 | 3 | 10 | unlimited |
+| **PAT (terminal data-plane token, D-03)** | 1 | 1 | 1 | 1 |
+| Ad-boost ceiling (rewarded ads, D-02) | +20 calls/day | — | — | — |
 | AI-fallback calls / month (VOL-11 §1) | 0 | 100 | 1,000 | 5,000 |
 | Result history retention | — | 90 days | 365 days | unlimited |
 | Saved presets | 3 | 50 | unlimited | unlimited |
@@ -116,13 +120,13 @@ Four tiers, monthly prices anchored to the per-tool replacement costs in the res
 | MCP via jontrix-gateway | ✓ (quota above) | ✓ | ✓ | ✓ |
 | Support | community | community | email | email + priority |
 
-Rationale, for the build agent's judgment calls later: Free's 155 Jonts are the HOOK/GLUE mass (155 FREE-fit rows) — enough catalog to prove the thesis with zero friction; Pro's +79 PRO-fit Jonts include the top-scored converters that anchor willingness to pay; the 13 MAX-fit Jonts are the LTV flagships (bank-statement PDF→CSV class, score ≥ 8.0 territory) held back to make Max a real decision, not a rounding error. MCP is deliberately quota-cheap at Free (100 calls/mo) so an agent operator can wire JONTRIX into a workflow and feel the ceiling within the same month — that ceiling is the upgrade.
+Rationale, for the build agent's judgment calls later: Free's 155 Jonts are the HOOK/GLUE mass (155 FREE-fit rows) — enough catalog to prove the thesis with zero friction; Pro's +79 PRO-fit Jonts include the top-scored converters that anchor willingness to pay; the 13 MAX-fit Jonts are the LTV flagships (bank-statement PDF→CSV class, score ≥ 8.0 territory) held back to make Max a real decision, not a rounding error. Free MCP is deliberately a **taste, not a workflow** (D-01): 40 calls/month ≈ two real agent sessions, so the aha moment lands and the wall arrives in the same month — a burst of 10 calls/10 s means one enthusiastic session cannot silently consume the whole quota twice over, and the 402 `upgrade_url` path (VOL-10 §4.6) is the pitch. The **PAT row is constant by design** (D-03): one data-plane credential per human, on every tier — it is an exit ramp for the user's own data, not a capacity feature, so it never scales with price.
 
 ### §4.3 Quota Semantics (LOCKED)
 
 All quota windows are UTC. Daily counters reset at 00:00 UTC; monthly counters reset on the 1st at 00:00 UTC. There are no rolling windows — a fixed reset is explainable in one sentence to a user, which C8 demands. Anonymous (logged-out) users on Free get the Free daily server-call quota keyed by a salted IP+UA hash, halved (12 calls/day), to blunt farm abuse without asking for an account first; signing in always doubles what an anonymous user had, and that promise appears verbatim in the UI copy.
 
-Counters live in D1 (authoritative) and are incremented only by the middleware's atomic check-and-increment; KV is used solely for the per-token/session burst window (read-heavy, ≤2 writes per call worst case — and KV's 1,000 writes/day free cap is protected by the design rule in VOL-05 §cache: *no per-request KV writes, ever*). When any daily cap reaches 80%, the middleware stamps `warnings: ["quota_80"]` on the response envelope so surfaces can show the one-time honest prompt. When a cap is reached: 402 + `upgrade_url` for tier caps; 429 + `Retry-After` for burst; the UI never invents a third kind of limit.
+Counters live in D1 (authoritative) and are incremented only by the middleware's atomic check-and-increment; KV is used solely for the per-token/session burst window (read-heavy, ≤2 writes per call worst case — and KV's 1,000 writes/day free cap is protected by the design rule in VOL-05 §cache: *no per-request KV writes, ever*). When any daily cap reaches 80%, the middleware stamps `warnings: ["quota_80"]` on the response envelope so surfaces can show the one-time honest prompt. When a cap is reached: 402 + `upgrade_url` for tier caps; 429 + `Retry-After` for burst; the UI never invents a third kind of limit. **Ad-boost counters (D-02):** each rewarded-ad grant raises the Free user's *effective* daily server-call cap by +10 (base 25 → max 45 with two ads) until the next 00:00 UTC reset; the boost ledger row (VOL-04 §5) records grant time, ad session id, and amount; boost is granted only after the ad network's reward callback, never on ad *start*; and the envelope's `quota` block always shows `base`, `boost`, and `effective` separately so the UI can be honest about where the headroom came from.
 
 ### §4.4 Gating Rules and Lifecycle (LOCKED)
 
@@ -151,9 +155,21 @@ USDT is the primary web rail and the only annual rail. Fixed-price invoices via 
 
 ### §5.4 Fallbacks and Non-Rails
 
-**FALLBACK (documented, not built at launch):** Paddle checkout — the only mainstream SaaS rail open to Bangladesh (3% + $1, Payoneer payout), reserved for the day a high-value customer segment demands card payment; VOL-06 carries its integration contract but Phase 5 does not build it. **Rejected with evidence:** Stripe, PayPal, Lemon Squeezy, Ko-fi, Buy Me a Coffee, Gumroad, Payhip, Patreon (all Stripe/PayPal/bank-dependent — broken per `research/payments.md`). **Ads (AdsGram, mini-app rewarded/video):** permitted by this spec only inside the Mini App, **default OFF at launch**, revisited at ≥10,000 DAU as a Free-tier monetization experiment; the decision and its numbers land in `docs/decisions.md` if activated. Ads never appear on the PWA or extension (C8 trust wedge).
+**FALLBACK (documented, not built at launch):** Paddle checkout — the only mainstream SaaS rail open to Bangladesh (3% + $1, Payoneer payout), reserved for the day a high-value customer segment demands card payment; VOL-06 carries its integration contract but Phase 5 does not build it. **Rejected with evidence:** Stripe, PayPal, Lemon Squeezy, Ko-fi, Buy Me a Coffee, Gumroad, Payhip, Patreon (all Stripe/PayPal/bank-dependent — broken per `research/payments.md`).
 
-### §5.5 Pricing Honesty Contract
+### §5.5 Ads — Option B, Rewarded-Only Boost (LOCKED, D-02)
+
+Ads exist on exactly one surface, in exactly one form: **AdsGram rewarded video inside the Telegram Mini App**, wired to a "⚡ Boost" button that trades an ad watch for quota. The full mechanics (reward callback, ledger, fraud rules, revenue accounting) live in VOL-08 §5 and VOL-15 §4; this section fixes the product-level contract:
+
+1. **Opt-in only, one form.** The Boost button is a user action; there are no interstitials, no banners, no auto-play, no rewarded walls, no offerwalls. Watching an ad is never required to continue any flow the user already started.
+2. **The exchange is fixed and stated before the tap.** One ad = +10 server-side Jont calls for the current UTC day. Max 2 ads/day (hard cap +20). The button label says exactly this; the reward is granted on the network's reward callback, and a failed/abandoned ad grants nothing.
+3. **Free tier only.** Paid tiers never render the button (there is nothing to boost honestly — their ceilings are the product); anonymous users may boost within the anonymous quota's own cap. PWA and extension never carry ad code of any network.
+4. **The C8 guardrail (LOCKED):** ads can never gate access to a user's own data or a base free function. Boost is always surplus on top of the baseline; no "watch an ad or lose your export", ever.
+5. **Honesty in the ledger.** Ad revenue (AdsGram pays in Stars with a 21-day hold) is recorded in the same ledger system as subscription revenue (VOL-15 §4) — the founder sees both numbers in one place, and neither is inflated in marketing copy.
+
+Revisit trigger (unchanged): if AdsGram effective CPM in the launch geos disappoints (< $1.00 eCPM sustained over 30 days), the fallback is turning Boost off entirely — not adding more ad surfaces. That decision is recorded in `docs/decisions.md`.
+
+### §5.6 Pricing Honesty Contract
 
 All surfaces render prices from the seeded `Plan` rows (§4.1) — never hard-coded strings — so the ladder can change in one place. Any future price change MUST: (a) grandfather existing windows to their end date, (b) update Stars and USDT ladders together within the same release, and (c) preserve the ×10 annual rule and the ≥-parity Stars-net rule. These three conditions are checked in the VOL-14 DoD sweep.
 
@@ -193,4 +209,9 @@ Every row is a test the platform must pass before the DoD sweep counts it (VOL-1
 | T1.10 | Any surface | renders pricing page | prices match seeded `Plan` rows byte-for-byte; Stars row shows dual in-app/web price |
 | T1.11 | U-FREE MCP | issues 2nd AAT | rejected (limit 1); error names the tier limit |
 | T1.12 | System | daily usage reaches 80% of Workers cap | watchdog flips conservative mode; status note posted; AI fallback returns deterministic path or clean error |
+| T1.13 | Any user's PAT | presents `jx_pat_…` to `/api/mcp/call` | `403 TOKEN_KIND_MISMATCH`; response names the fix ("create an AAT in the dashboard"); nothing metered |
+| T1.14 | U-FREE Mini App | watches 2 rewarded ads, then taps Boost a 3rd time | +10 calls after each reward callback (effective cap 45); 3rd grant refused today with honest cap copy; PWA shows no Boost anywhere |
+| T1.15 | New user, fresh account | completes onboarding without touching the consent card | `ai_training_consent = 'denied'`; no training-pipeline query ever returns this user's rows (VOL-16 §6) |
+
+**DoD hooks (VOL-14):** the rails E2E gate (G-16), downgrade-integrity (G-17), quota honesty on all tiers (G-33), and the pricing-invariants check inside the ledger sweep (G-38) are the VOL-01 DoD anchors — T1.1–T1.15 are their primary fixtures.
 

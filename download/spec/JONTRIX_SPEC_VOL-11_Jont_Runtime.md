@@ -1,67 +1,78 @@
-# Volume 11 — Jont Runtime, Manifests & the Five Patterns
+# Volume 11 — Jont Runtime & Jont-Kit
 
 **Document:** JONTRIX Build Specification — VOL-11
+**Publisher:** Fraziym Soft
 **Version:** 1.0 (2026-09-03)
-**Status:** LOCKED
-**Depends on:** VOL-00 C5/C6 (deterministic-first, files-stay-local), VOL-01 §4 (gating), VOL-04 §2 (registry), VOL-05 §5 (AI router). Referenced by: Phase 3, VOL-12/13 (every card), VOL-07 §3–4 (loader/pipeline).
+**Status:** LOCKED except where marked AGENT CHOICE
+**Depends on:** VOL-00 (C5, C6), VOL-01 §4 (limits), VOL-04 §4 (registry), VOL-05 §4/§10 (dispatch, AI router). Referenced by: VOL-12/13 (every card uses these contracts), VOL-07 §4 (client loader), VOL-10 §4.5 (tool specs).
 
 ---
 
-## §1 The Deterministic-Before-AI Principle (C5, restated as build law)
+## §1 The Deterministic-First Law (LOCKED, C5)
 
-A Jont's core transformation MUST be a deterministic algorithm whenever one exists; AI is a fallback for fuzzy steps only, and every AI call is cached (VOL-00 §0.2 C5). In build terms: a Jont card declares `pattern` + `context` from the registry, and its manifest declares either a pure engine or an engine-plus-fallback pair. The test of "fuzzy" is contractual, not vibes: a step is AI-eligible only if the same input can legitimately yield multiple defensible outputs that a deterministic function cannot rank (e.g. "what column does this header mean" in a messy bank PDF — DR-F1's one AI step), and it is AI-forbidden if a correct answer is checkable (any format conversion, any validation, any checksum — the engine must do it, because determinism is the trust wedge and the 10 ms CPU budget's best friend). **MUST:** every AI-eligible step declares its fallback in the manifest (§2), routes through the VOL-05 §5 router (cache-first, rotation, give-up), and degrades to a useful deterministic partial result or an honest error — never to a hang. **NEVER:** an AI call inside a loop over rows (batch the fuzzy step once), an AI call on a path covered by a pattern (§4), or a Jont whose "engine" is just a prompt (that is not a Jont; it is a chatbot and it fails this volume's review).
+Every Jont's core transformation is a **deterministic algorithm whenever one exists**; AI is a capped fallback for genuinely fuzzy steps (e.g., fuzzy column matching in messy CSVs), and every AI call is cached (VOL-05 §10). The runtime enforces the law structurally: a manifest that declares `ai_steps` must declare the deterministic path first and the fallback second, and Free-tier users (0 AI quota) must always get the deterministic path or an honest error — never a silent quality drop. **MUST:** identical inputs produce byte-identical outputs for the deterministic path (a DoD test re-runs fixtures); **NEVER** an AI call where a documented algorithm suffices, and never an AI call that skips its cache.
 
-## §2 The Jont Manifest (`jont.manifest.json` — validated by `packages/jont-kit/src/manifest.ts`)
+## §2 The Manifest Contract (LOCKED)
 
-Every Jont ships one manifest; the zod schema in `jont-kit` is the single validator used by the build (registry seed), the runtime (load-time check), CI (schema gate), and the SEO generator. Contract (shape, not code):
+Every Jont ships a `jont.manifest.json`, validated at build time by `packages/jont-kit/src/manifest.ts` (zod) and stored in the `jonts` registry (VOL-04 §4). The interface, binding:
 
 ```ts
 interface JontManifest {
-  jont_id: string;            // "J014" — matches the registry row (VOL-04 §2)
-  src_id: string;             // opportunities.json row id — provenance
-  slug: string;               // kebab-case, unique, = URL + MCP tool suffix
-  name: string;               // human short name ("PDF Table Extractor")
-  problem_statement: string;  // evidence-cited H1 subtitle (VOL-00 §0.5) — verbatim from the row
+  id: string;                       // "jont_j001_pdf-table-extractor"
+  title: string; family: string;    // VOL-13 family id
   pattern: 'converter'|'validator'|'generator'|'extractor'|'fixer';
-  context: 'client'|'server'; // C6: client where the engine permits; server needs this flag + UI label
-  tier_fit: 'FREE'|'PRO'|'MAX';
-  mcp_exposed: boolean;       // VOL-10 §4.5 filter
-  input: { media_type: string; max_mb: number; schema?: object };  // JSON Schema → MCP inputSchema
-  output: { media_type: string; preview_rows?: number };
-  engine: { kind: 'wasm'|'js'|'server'; asset: string /* content-hashed */; chunk?: { unit: 'rows'|'lines'|'bytes'; size: number } };
-  ai_fallback?: { step: string; model_class: string; cache_ns: string; deterministic_hint: string };
-  limits_note?: string;       // honest copy shown at the gate
-  faq: [string, string][];    // exactly 3 Q/A pairs → SEO page (VOL-07 §5)
-  acceptance: AcceptanceRow[];// the card's test table (§6) — same rows as VOL-12/13 print
+  context: 'client'|'server'|'hybrid';   // C6: client whenever possible
+  io: { input: JSONSchema; output: JSONSchema; preview_rows?: number };
+  engine: { client?: string; server?: string };  // module paths (content-hashed at build)
+  ai_steps?: string[];              // fuzzy steps only; deterministic path declared first
+  tier_fit: 'FREE'|'PRO'|'MAX'; mcp_exposed: boolean;
+  evidence: { problem_row: string; score: number };  // traceability, VOL-02 §7
 }
 ```
 
-**MUST:** `problem_statement` equals the registry row's `title` byte-for-byte; `input.max_mb` never exceeds the tier matrix's `max_upload_mb` for its tier (the manifest is capped by VOL-01, not the other way around); `engine.asset` hashes are regenerated by the build and never hand-edited. **NEVER:** a manifest field outside this contract (the zod schema is strict — unknown keys fail), or a manifest whose `acceptance` array is empty.
+**MUST:** a client `context` Jont never declares a server engine route, and its manifest must pass the C6 leak test (T7.1); a `hybrid` Jont states exactly which steps run where. **NEVER:** a manifest field that duplicates the registry (manifest is the source; the registry row is the projection).
 
-## §3 Runtime Contract (both contexts, one semantics)
+## §3 The Five Patterns (LOCKED)
 
-Client engines (VOL-07 §3–4) and server engines (VOL-05 dispatch) run the same logical pipeline: **validate → transform → emit**. `jont-kit` provides the runtime shell: input validation against `input.schema` (422 `ARGUMENTS_INVALID` with `field_paths` on failure), the streaming chunk loop when `engine.chunk` is declared (backpressure, cancellation, live counts — VOL-07 §4), the metering hooks (ms, bytes in/out → `jont_usage`), and the envelope mapping of every failure to the VOL-05 §8 table. Server engines additionally enforce: the 10 ms CPU reality (validation and I/O are cheap; transforms offload to streaming/wasm patterns — a CPU-bound server Jont that busts the budget is a design bug, not a quota problem), the SSRF guard for any Jont that fetches URLs (private-range refusal, scheme allowlist, response size cap), and the read-only brake refusal (VOL-01 §6). The harness (`jont-kit/src/testing/harness.ts`) runs any engine against its `acceptance` rows in Node (server) or headless browser (client) — the same rows VOL-12/13 print are the tests CI runs; there is no second source of truth for what a Jont must do. **MUST:** the harness executes every Jont's acceptance table green before its registry row may flip `status: planned → beta → live`. **NEVER:** an engine reading env/secrets on the client context, a server Jont without the SSRF guard when it takes URLs, or a Jont shipping with harness-skipped rows.
+`packages/jont-kit/src/patterns/` exports exactly five — every one of the 247 Jonts is an instance of one, which is what makes the long tail cheap (VOL-01 §1):
 
-## §4 The Five Patterns (each Jont declares exactly one)
+| Pattern | Input → Output shape | Deterministic core | Notes |
+|---|---|---|---|
+| **converter** | bytes/text → bytes/text | parsing + re-serializing | PDF→CSV, JSON→YAML class; output byte-identical for identical input |
+| **validator** | data + rule set → findings[] | rule evaluation | schema/lint/compliance checks; findings carry row/field pointers |
+| **generator** | params → artifact | templating | invoices, feeds, sitemaps; templates versioned in the manifest |
+| **extractor** | bytes → structured rows | parsing + selection rules | tables, links, entities; `preview_rows` powers the free preview (VOL-07 §3) |
+| **fixer** | data → data + change log | transforms + rules | CSV repair, date normalization; every mutation is logged in the output |
 
-| Pattern | Contract (what the engine must produce) | Canonical examples from the frozen rows |
-|---------|------------------------------------------|------------------------------------------|
-| **Converter** | input format A → output format B, lossless by default; a documented, honest loss map when lossy (e.g. PDF layout → CSV merges); deterministic byte-stable output for identical input | JSON↔CSV (arrays-safe), CSV→XLSX, cURL→code, Markdown→HTML, dataset feed mapping |
-| **Validator** | input → structured findings `[{path, code, message, severity, fix_hint?}]` + pass/fail; zero mutation; findings order stable (path, then code); `fix_hint` present only where a fixer sibling exists | CSV delimiter/encoding guard, JSON syntax lint, JSON Schema validation, citation-link checker (WG-G4's deterministic half) |
-| **Generator** | structured input + options → artifact bytes; every option default documented; output reproducible (same input+options+version ⇒ same bytes, `VERSION` stamped in metadata) | JSON mock-data generator, sitemap/robots generator, invoice template renderer, WhatsApp order-book export |
-| **Extractor** | unstructured/binary input → structured records; must emit confidence metadata when heuristic (e.g. scanned-PDF caveats), preserve source offsets for audit (`[{record, source_span}]`), and never fabricate rows to fill gaps | PDF table extractor (text-layer), bank-statement transaction pull (AI-assisted header mapping only), email/order parser (EC-C29) |
-| **Fixer** | broken input → repaired output + change log `[{location, before, after, rule}]`; rules are explicit and ordered; ambiguity produces a finding, not a silent choice; idempotent (fixing a fixed input is a no-op) | JSON repair (DR-B1 trailing commas/NaN), CSV column-split repair (DR-A2), encoding fixes, feed error repair |
+**MUST:** each pattern's runtime signature is `(input, options) → Result` with a uniform `Result` envelope (`data`, `warnings[]`, `change_log?`, `ms`); **NEVER** a sixth pattern without a spec revision — a Jont that seems to need one is mis-modeled.
 
-**MUST:** pattern implementations live in `jont-kit/src/patterns/{converter,validator,generator,extractor,fixer}.ts` as shared skeletons (I/O contracts, metering, error mapping); a Jont's engine composes its pattern skeleton with its specific algorithm — two Jonts of one pattern differ only in algorithm code. **NEVER:** a Jont inventing its own envelope, a fixer with silent fixes, an extractor without source spans, or a validator that also mutates (compose validator+fixer instead).
+## §4 Server Dispatch (LOCKED)
 
-## §5 AI Fallback Rules (the only place AI may appear)
+`POST /api/jonts/{id}/run` (VOL-05 §4) executes: **(1)** manifest fetch from registry; **(2)** argument validation against `io.input` (422 on fail); **(3)** concurrency slot check (`concurrent_jobs`, D1 counter, 429 on saturation — queued jobs are *not* held, the client retries); **(4)** engine execution in the Worker with a hard timeout (10 s CPU-equivalent; larger jobs are the batch API's problem via `batch_rows_max` chunking); **(5)** metering row in `jont_usage` (VOL-04 §4) and counter increment in the same transaction as the dispatch decision (VOL-10 §7 semantics); **(6)** result: ≤ 64 KB inline, larger to R2 with a handle (VOL-04 §4). **MUST:** inputs stream and die with the request (C6 — no upload-at-rest); **NEVER** a server route that executes a client-context Jont (the dispatcher refuses by manifest and says so).
 
-An `ai_fallback` block is legal only on extractor/validator steps that meet §1's fuzzy test, and it binds: the exact `step` it serves, a `model_class` (not a vendor — the VOL-05 §5 router picks the provider), a `cache_ns` (the D1 `ai_cache` namespace; every fallback answer is cached under it and reused platform-wide for identical sub-problems), and a `deterministic_hint` (the partial result returned when the router gives up — e.g. "unmapped columns are exported as `col_N` with a findings note"). Fallback calls are sliced to the minimal context (header rows, the failing record — never the whole file), run once per distinct sub-problem (cache first), and count against the caller's `ai_calls` monthly quota (VOL-01 §4.2: 0/100/1000/5000 — Free users never hit AI; their extractors ship the `col_N` hint path as the default experience). **MUST:** the acceptance table includes one row proving the deterministic hint path works with AI disabled (CI runs with the router stubbed to give-up). **NEVER:** an AI fallback on a converter/generator/fixer, a fallback that changes output format depending on provider (normalization layer mandatory), or user file content persisted in the cache beyond the sub-problem slice.
+## §5 Client Engine Packing (LOCKED)
 
-## §6 Acceptance Rows and the Pattern Templates
+Client engines are ES modules (+ WASM) built per Jont, content-hashed, uploaded as Pages static assets, loaded lazily by the PWA loader (VOL-07 §4) — the extension never bundles them (T9.4). Packing rules: one engine per Jont (no shared mutable state), memory guard 2 GB, cancelable, progress events at defined percentages for long transforms. **MUST:** a client engine and its server twin (hybrid Jonts) pass the **same** pattern-level fixtures — the harness (§7) runs both; **NEVER** a client engine fetching anything but its own static assets and the platform API for saves/presets.
 
-`AcceptanceRow = { name: string; input: fixture_ref | inline; expect: 'result_matches' | 'findings_match' | 'error_code'; expected: string; note?: string }`. Inputs live in `tests/fixtures/jonts/{jont_id}/` (VOL-03 §6); expected outputs are checked with structural equality (parsed JSON/CSV) plus byte-hash for generators. Every card in VOL-12/13 prints its acceptance rows from the manifest, and the harness prints the same rows — one contract, three renderings (card, test, CI log). Minimum per Jont: 3 happy-path rows, 1 edge row (empty input / max size boundary), 1 failure row (invalid input → the §8 error code), and the §5 hint row when AI-assisted. The harness additionally asserts the **pattern invariants** of §4 (byte-stability for converters/generators, idempotence for fixers, no-mutation for validators, offsets for extractors) so a Jont cannot pass its own rows while violating its pattern.
+## §6 Chaining and Presets (LOCKED)
 
-## §7 Performance Budgets (per Jont, enforced in CI)
+The DR-D2 insight (VOL-02 §3) becomes a runtime feature: a Jont's output shape (`io.output`) can feed another Jont whose input it matches; the PWA run panel offers "send to…" filtered by schema compatibility, and a chain is saved as a preset whose payload records the ordered steps (VOL-04 §4 `presets.payload_json`). **MUST:** each chain step meters and gates independently (a chain is sugar over N runs, not a bypass); **NEVER** a chain that hides a PRO-fit step behind a FREE-fit entry point — the gate fires at the step, honestly.
 
-Client Jonts: cold engine fetch ≤ 2 MB gz (larger needs a decision entry), time-to-interactive on a mid-range phone ≤ 3 s after fetch, 1 MB input processed ≤ 5 s single-threaded equivalent, memory ≤ 2 GB peak (the DR-B2/DV-B1 class streams instead of allocating). Server Jonts: p95 ≤ 2 s wall for inputs ≤ 10 MB (10 ms CPU forces the design: stream, hash, delegate — never parse-and-hold), response body ≤ 25 MB (larger → R2 ref per VOL-04 §3), zero subrequest explosions (≤ 45 of the 50-subrequest budget per call). The harness measures all of this on the acceptance fixtures and fails the Jont's build when a budget busts — performance regressions are DoD failures (VOL-14 §2), not tickets.
+## §7 The Testing Harness (LOCKED)
+
+`packages/jont-kit/src/testing/harness.ts` runs a Jont against its card's fixture table (VOL-12/13): given input → assert output byte-equality (deterministic), warnings, preview rows, timing budget, and (for AI steps) cache-hit behavior with a stubbed router. The harness is the *only* sanctioned way to satisfy "acceptance tests passing" per Jont (VOL-00 §0.1) — VOL-12/13 tables are its input format, and `npm run test:jonts` iterates the registry. **MUST:** fixtures live beside the card data, versioned; **NEVER** a Jont marked `built` in the registry with a red harness.
+
+## §8 Acceptance Tests
+
+| # | Given | When | Then |
+|---|-------|------|------|
+| T11.1 | Any deterministic Jont | run same input twice (client and server where hybrid) | byte-identical outputs both times, both contexts |
+| T11.2 | Manifest with ai_steps | Free user runs it | deterministic path executes; zero AI-provider contact (T5.10 shared) |
+| T11.3 | U-MAX, concurrent_jobs = 10 | 11th simultaneous run | 429 with retry hint; no slot leak after cancel |
+| T11.4 | Server run, 1 MB result | dispatch completes | R2 handle returned; inline threshold respected; `jont_usage` row has bytes_out |
+| T11.5 | client-context Jont | POST to `/api/jonts/{id}/run` | refused with honest "this runs in your browser" message |
+| T11.6 | Chain preset (3 steps, middle = PRO-fit) | Free user runs it | steps 1–3 gate independently; step 2 → 402; steps 1 and 3 metered |
+| T11.7 | Every `built` Jont | `npm run test:jonts` | harness green; registry and manifest agree (`mcp_exposed`, `tier_fit`, score) |
+| T11.8 | AI step, warm cache | repeat run | cache hit; no provider call; `ai_YYYYMM` counter unmoved |
+
+**DoD hooks (VOL-14):** "harness green for all built Jonts" (G-10), "determinism double-run proof" (G-11), "C6 leak test" (G-07 shared), "AI fallback caps + cache verified" (G-14 shared).
