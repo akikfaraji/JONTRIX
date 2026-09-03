@@ -6,13 +6,14 @@ import { Button } from '@/components/ui/button';
 import { useSessionValue } from '@/components/site/session-context';
 import { ThemeToggle } from '@/components/site/theme-toggle';
 
-export type View = 'home' | 'tools' | 'pricing' | 'dashboard' | 'tokens' | 'about';
+export type View = 'home' | 'tools' | 'pricing' | 'dashboard' | 'tokens' | 'about' | 'connect';
 
 const NAV: { id: View; label: string }[] = [
   { id: 'home', label: 'Home' },
   { id: 'tools', label: 'Tools' },
   { id: 'pricing', label: 'Pricing' },
   { id: 'dashboard', label: 'Dashboard' },
+  { id: 'connect', label: 'Connect agent' },
   { id: 'about', label: 'About' },
 ];
 

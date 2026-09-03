@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { RunPanel } from '@/components/site/run-panel';
 import type { JontRecord } from '@/lib/types';
 
 const TIER_COPY: Record<string, string> = {
@@ -74,12 +75,7 @@ export function ToolDetailView({
 
         <Card className="border">
           <CardContent className="p-5">
-            <p className="text-sm font-medium">Run panel</p>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              The input form, engine, and export buttons for this tool land in
-              its build phase — this page is the permanent home of the tool,
-              and it will contain the working tool itself, never a stub page.
-            </p>
+            <RunPanel tool={tool} />
             <Separator className="my-4" />
             <div className="grid gap-2 text-sm">
               <div className="flex items-center justify-between gap-2">

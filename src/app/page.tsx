@@ -9,6 +9,7 @@ import { PricingView } from '@/components/site/pricing-view';
 import { DashboardView } from '@/components/site/dashboard-view';
 import { TokenFactoryView } from '@/components/site/token-factory-view';
 import { AboutView } from '@/components/site/about-view';
+import { ConnectView } from '@/components/site/connect-view';
 import { ToolDetailView } from '@/components/site/tool-detail-view';
 import { SessionProvider, useSessionValue } from '@/components/site/session-context';
 import { SignInDialog } from '@/components/site/sign-in-dialog';
@@ -76,6 +77,7 @@ function PageBody() {
         {view === 'pricing' && <PricingView />}
         {view === 'dashboard' && <DashboardView onOpenTokens={() => setView('tokens')} />}
         {view === 'tokens' && <TokenFactoryView onBack={() => setView('dashboard')} />}
+        {view === 'connect' && <ConnectView />}
         {view === 'about' && <AboutView />}
       </main>
       <SiteFooter />
