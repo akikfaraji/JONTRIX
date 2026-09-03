@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BoostButton } from '@/components/site/boost-button';
 import { useSessionValue } from '@/components/site/session-context';
 
 const TIER_LABEL: Record<string, string> = {
@@ -230,6 +231,7 @@ export function DashboardView({
           </CardHeader>
           <CardContent className="space-y-5 pt-0">
             <QuotaMeter label="Server-side tool calls / day" quota={me.quota.server_calls} boostNote />
+            {me.tier === 'free' && <BoostButton />}
             <Separator />
             <QuotaMeter label="Agent (MCP) calls / month" quota={me.quota.mcp_calls} />
             <p className="text-xs leading-relaxed text-muted-foreground">
