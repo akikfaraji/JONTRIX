@@ -1,0 +1,26 @@
+{
+  "name": "jontrix-gateway",
+  "version": "0.1.0",
+  "description": "JONTRIX MCP gateway — one local process between your MCP host and the JONTRIX tool catalog. Zero telemetry.",
+  "license": "UNLICENSED",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "jontrix-gateway": "bin/gateway.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
