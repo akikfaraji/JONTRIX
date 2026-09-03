@@ -1,0 +1,145 @@
+# Volume 0 — Agent Build Protocol
+
+**Document:** JONTRIX Build Specification
+**Publisher:** Fraziym Soft
+**Version:** 1.0 (2026-09-03)
+**Purpose:** This single specification is sufficient for one autonomous build agent to design, implement, test, deploy, and launch the complete JONTRIX system in one continuous engagement. Nothing else is required. No product decisions remain.
+
+---
+
+## 0.1 How To Read This Specification
+
+You, the build agent, are addressed directly throughout this document. "You" means the autonomous coding agent executing the build. Every volume below is written so that you can act on it without asking a human anything. Where the spec says **LOCKED**, that decision is final and must not be renegotiated, substituted, or "improved." Where the spec says **FALLBACK**, that is the documented Plan-B you switch to only when the primary service fails, is unavailable at build time, or its terms have materially changed. Where the spec says **AGENT CHOICE**, you may pick freely within the stated constraints, and you must record the choice in `docs/decisions.md` with a one-line rationale.
+
+The specification is organized into 15 volumes. Read all of them once, in order, before writing any code. The volumes reference each other by ID (for example, "see VOL-04 §2 for the `usage_ledger` schema"). Volume 12 contains fifty complete build specifications for the fifty highest-value Jonts, and Volume 13 catalogs the remaining long-tail Jonts. Volumes are numbered `00` through `15` and the build order is defined in §0.3 below, which is not the same as the reading order.
+
+Three file types appear throughout:
+
+1. **Contract blocks** — JSON or TypeScript type definitions. These are binding interfaces. If two volumes ever appear to conflict, the contract block wins, and you must note the conflict in `docs/decisions.md`.
+2. **Reference implementations** — complete code listings. These are meant to be copied into the repository nearly verbatim, then extended. They already satisfy the DoD items they claim to satisfy. Do not rewrite them for style.
+3. **Acceptance tests** — tables of input/expected-output pairs. Every Jont ships with its acceptance tests passing before it counts as done. The global Definition of Done (VOL-14) is the final gate.
+
+If you encounter a situation this spec does not cover, apply the following tie-breaker ladder, in order: (1) does it preserve the global constraints in §0.2? (2) does it follow the cheapest-$0 path? (3) does it follow the deterministic-before-AI principle (VOL-11 §1)? (4) choose the option with the least operational surface to maintain, given the under-10-minutes-per-week maintenance budget (VOL-14 §6). Record every such decision in `docs/decisions.md`.
+
+---
+
+## 0.2 Global Constraints (LOCKED)
+
+These eight constraints bound every decision in every volume. They come from the founder's mission and from the verified research corpus in `research/`. If any proposed change violates one of these, the change is rejected.
+
+| # | Constraint | Meaning in practice |
+|---|------------|---------------------|
+| C1 | **$0.00 capital, $0.00/month run cost** | Every service must have a free tier that covers the projected load in VOL-01 §6, or a client-side equivalent. No paid plans, no trials that convert, no credit card on file anywhere. |
+| C2 | **No bank account, no credit card of the founder** | Payouts land via USDT to a self-custody wallet, P2P to bKash/Nagad/Rocket, or Payoneer. Never wire-to-bank. See VOL-06 §7 for the compliant payout protocol. |
+| C3 | **No freelance, no manual client acquisition** | All growth is product-led: SEO pages, Telegram distribution, extension store, MCP directory listing, ad rails. Cold outreach is forbidden. |
+| C4 | **Under 10 minutes/week of human maintenance** | Operations are cron-driven with dead-man switches (VOL-14 §6-7). Any design requiring daily human attention is rejected. |
+| C5 | **Deterministic before AI** | A Jont's core transformation must be a deterministic algorithm whenever one exists. AI is a fallback for fuzzy steps only, and every AI call is cached. See VOL-11 §1. |
+| C6 | **Files never leave the browser by default** | Any Jont whose engine can run client-side (WASM/JS) must run client-side. Server-side execution is the exception, requires a manifest flag, and the UI must say so. This is the trust wedge that converts users into subscribers. |
+| C7 | **Respect every provider's ToS** | One account per provider, respect rate limits, honor robots and scraping restrictions. The AI router (VOL-05 §5) rotates providers instead of exceeding limits. |
+| C8 | **Honest product, honest marketing** | No fake counters, no dark patterns, no invented testimonials. The brand is Fraziym Soft (publisher) and JONTRIX (product). |
+
+---
+
+## 0.3 The One-Shot Build Protocol
+
+Execute the phases in this exact order. Do not start a phase until the previous phase's exit condition is met. Each phase lists its output and its exit condition.
+
+**Phase 0 — Scaffold (target: first working deploy).** Create the monorepo exactly as laid out in VOL-03 §4. Initialize the Cloudflare Workers project, D1 database, R2 bucket, KV namespaces, and Pages project; run `wrangler deploy` and `wrangler d1 migrations apply` so that an empty-but-live API exists behind the real domain. Register the healthchecks.io dead-man switch and the CF Cron that pings it. *Exit condition:* `https://api.jontrix.app/health` returns `200` and the watchdog shows "up."
+
+**Phase 1 — Data layer.** Apply every migration in VOL-04. Seed the `jonts` registry from the machine-readable catalog (`spec/catalog/jonts.seed.json`, generated from Volume 13). Seed entitlement plans to match VOL-01 §4. *Exit condition:* a script `npm run db:verify` passes, asserting every table, index, and seed row exists.
+
+**Phase 2 — Platform core.** Implement VOL-05 completely: router, auth, entitlements middleware, rate limiter, cache, AI router, error taxonomy. Ship the three health/utility endpoints. *Exit condition:* the integration test suite in `tests/platform/` passes against a local `wrangler dev` with Miniflare D1.
+
+**Phase 3 — Jont runtime + first ten Jonts.** Implement VOL-11 (the runtime and the five patterns). Then build Jonts `J001` through `J010` from VOL-12, each with its acceptance tests passing. These ten were chosen because they exercise all five patterns and both execution contexts (client WASM and server Worker). *Exit condition:* `npm run test:jonts` green for J001-J010; each has a live URL on the PWA.
+
+**Phase 4 — PWA surface.** Build VOL-07: app shell, Jont page template, engine loader, worker pipeline, SEO landing pages for J001-J010. *Exit condition:* Lighthouse performance and accessibility scores of 90 or higher on the home page and one Jont page; programmatic SEO pages render correct canonical URLs.
+
+**Phase 5 — Accounts, billing, entitlements.** Implement VOL-06: Telegram Login + email OTP auth, Stars checkout end-to-end, NOWPayments invoice flow, Paddle checkout, entitlement sync state machine. *Exit condition:* a test purchase of each tier flips entitlements in D1 and the UI reflects the tier within 60 seconds.
+
+**Phase 6 — Telegram bot and Mini App.** Implement VOL-08. *Exit condition:* the bot serves the Jont catalog, opens the Mini App, completes a Stars purchase, and delivers a receipt.
+
+**Phase 7 — Chrome extension.** Implement VOL-09. *Exit condition:* the extension loads unpacked, authenticates a user, and runs two server-side Jonts (CORS Echo and cURL-to-Code) from any origin tab.
+
+**Phase 8 — MCP server.** Implement VOL-10. *Exit condition:* an MCP client (any reference client) can list tools and successfully call two Jonts using an API key, with usage metered in `jont_usage`.
+
+**Phase 9 — Remaining Jonts, DoD sweep, launch.** Build the remaining top-50 Jonts from VOL-12 in descending score order, then the long-tail catalog from VOL-13 in family batches. Run the full Definition of Done sweep (VOL-14), wire CI (VOL-14 §3), execute the launch checklist and the 90-day roadmap (VOL-14 §8). *Exit condition:* the DoD report (`docs/dod-report.md`) shows every checklist item checked, and the launch checklist is complete.
+
+Throughout, commit small and often with conventional commits. Every phase ends with: tests green, deploy live, `docs/decisions.md` updated, and a short entry in `BUILDLOG.md` (one paragraph: what shipped, what broke, what you decided).
+
+---
+
+## 0.4 Repository Layout (LOCKED)
+
+Create exactly this monorepo. Where a file is not specified in later volumes, its content follows the conventions of its neighbors.
+
+```
+jontrix/
+  package.json                  # npm workspaces, private
+  tsconfig.base.json
+  .github/workflows/ci.yml      # VOL-14 §3.1
+  .github/workflows/deploy.yml  # VOL-14 §3.2
+  apps/
+    api/                        # Cloudflare Worker: api.jontrix.app (VOL-05, 06)
+      wrangler.toml
+      src/index.ts
+      src/routes/…              # auth, jonts, billing, entitlements
+      src/lib/…                 # ai-router, cache, ratelimit, errors, log
+      migrations/0001_init.sql  # VOL-04
+      tests/…
+    mcp/                        # Cloudflare Worker: mcp.jontrix.app (VOL-10)
+      wrangler.toml
+      src/index.ts
+    pwa/                        # PWA + Telegram Mini App host (VOL-07, 08)
+      vite.config.ts
+      index.html
+      src/app/…                 # shell, router, stores
+      src/jonts/…               # one folder per client-side Jont engine
+      src/engines/…             # WASM/JS engine loader + web-worker pipeline
+      public/seo/…              # generated programmatic pages
+    extension/                  # Chrome MV3 extension (VOL-09)
+      manifest.json
+      src/background.ts
+      src/content/…
+      src/popup/…
+  packages/
+    jont-kit/                   # shared Jont runtime + patterns (VOL-11)
+      src/patterns/converter.ts validator.ts generator.ts extractor.ts fixer.ts
+      src/manifest.ts           # zod schema for jont.manifest.json
+      src/testing/harness.ts
+    ui/                         # design tokens + shared Preact components
+    config/                     # eslint, tsconfig, vitest presets
+  spec/                         # THIS specification, kept in-repo
+    catalog/jonts.seed.json     # generated from VOL-13
+  docs/
+    decisions.md                # append-only decision log (required)
+    dod-report.md               # DoD sweep results
+    runbooks/                   # payout, incident, backup (VOL-06 §7, VOL-14 §6)
+  research/                     # read-only evidence corpus (from the founder)
+  scripts/                      # qa_gate.sh, seed.ts, seo-gen.ts, verify-db.ts
+  BUILDLOG.md
+```
+
+---
+
+## 0.5 Definition of Done — Explained In Plain Language
+
+**DoD means "Definition of Done."** It is nothing more than a checklist that answers one question: *when is a piece of work genuinely finished, not just "I wrote the code and it seems to work"?* A checklist is needed because the most common failure mode of an autonomous build is declaring victory too early — the feature runs on the happy path, but the error path crashes, the tests were never written, the docs are missing, and nobody can reproduce the deploy.
+
+This specification uses DoD at two levels:
+
+1. **Per-Jont DoD** (format defined in VOL-14 §2, enforced on every Jont card in VOL-12): a Jont is done when its manifest validates, its engine passes every acceptance-test row, its UI works on mobile and desktop, its tier gating works for anonymous/free/paid users, its SEO page renders, and its evidence-cited problem statement ships as the page's H1 subtitle. If any box is unticked, the Jont is not done, and it must not be counted, listed, or announced.
+2. **Global DoD** (VOL-14 §1): forty numbered checks covering the whole system — deploy health, billing integrity, privacy promises kept, monitoring armed, docs written, and the founder's constraints (§0.2) verified. The build is complete only when `docs/dod-report.md` lists every check as PASS with evidence (command output or URL).
+
+Plain-language rule of thumb for you, the agent: **done means a stranger could use it, break it, and get a sensible error, and you could prove all of that without touching the keyboard again.**
+
+---
+
+## 0.6 Evidence Grading Legend
+
+Research claims in this spec carry a grade from the founder's research corpus, kept so you can weigh how hard to fight a problem:
+
+- **E1** — direct first-party evidence: official documentation or pricing page, quoted community thread, or reproducible bug report. Treat as fact.
+- **E2** — second-party evidence: reputable publication, aggregator data, or a vendor page that implies the claim. Treat as strong signal.
+- **E3** — inference or hypothesis marked as such by the researcher. Treat as a guess to validate cheaply after launch; do not over-invest.
+
+The full corpus lives in `research/` (seven streams: data-repair, devtools, ecom-smb, distribution-weird, ai-providers, infra, payments). VOL-02 condenses what matters; VOL-15 carries the ledgers. You never need to re-research: priorities are already computed and frozen in `research/opportunities.json` (247 rows, 38 fields, 10-dimension weighted score). When a Jont card says "score 7.58," that number comes from that file.
