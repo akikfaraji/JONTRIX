@@ -18,6 +18,9 @@ is corrected.
 
 ## Layout
 
+A full map of every surface (bot, MiniApp, MCP, runtime, extension) is in
+[docs/CODEMAP.md](docs/CODEMAP.md).
+
 ```
 spec/            Normative volumes VOL-00..16 + jonts.seed.json catalog
 src/             Next.js app: dashboard (PWA), API routes (/api/v1, /api/mcp, /api/jonts),
