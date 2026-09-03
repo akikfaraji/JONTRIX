@@ -173,3 +173,21 @@ Stage Summary:
 - REJECTED with evidence: TOOLDEX (tooldex.org/.co/.io all live, same exact concept), EKTAKA (ektaka.com live in BD launch market + Bidyanondo charity phrase). AUTODHAN = clean runner-up (search engine couldn't even resolve the term; domain unregistered).
 - Proposed architecture: FRAZIYM = founder/maker brand -> JONTRIX = product -> each micro-tool = a "Jont" -> tiers JONTRIX Free/Pro/Studio.
 - Deliverables NOT rebranded yet (awaiting founder confirmation). Rebrand path: persisted scripts (build_pdf.py, build_xlsx.py, make_charts.py, build_export.sh) make it a one-pass rename.
+
+---
+Task ID: 8
+Agent: main (Super Z)
+Task: Apply founder corrections to JONTRIX spec — (1) contracts-only style, (2) MCP redesign around /api/mcp/login + jontrix-gateway with PAT/AAT; write VOL-01 and VOL-10.
+
+Work Log:
+- VOL-00 (spec/00-agent-protocol.md) edited: "Reference implementations / complete code listings" file type REPLACED with behavioral-spec + LOCKED "contracts, not code" writing rule (snippets capped at 5 lines); Phase 5 rewritten to Stars+USDT hard-wired (Paddle = documented FALLBACK only); Phase 8 rewritten to gateway-based exit (PAT + AAT through jontrix-gateway); packages/gateway/ added to LOCKED repo layout.
+- VOL-01 (spec/01-product.md, 196 lines) written: §1 product definition (247-Jont mega-toolbox, tier ladder Free/$0·Pro/$4.99·Studio/$9.99·Max/$19.99 matching published report); §2 personas + 4 LOCKED surfaces (PWA, Mini App, Extension, MCP-via-gateway); §3 five product invariants; §4 entitlements: Plan/Limits/Entitlement TS contracts, §4.2 tier matrix (155/234/234/247 Jont unlocking, MCP quotas 100/2k/10k/100k per month, AAT limits 1/3/10/∞), §4.3 UTC quota semantics + atomic check-and-increment, §4.4 honest client-side gating + downgrade keeps data; §5 rails: Stars ladder 400/750/1500 (net $0.013/Star math, monthly-only) + USDT via NOWPayments (monthly+annual ×10) HARD-WIRED, Paddle=FALLBACK, AdsGram default-OFF; §6 load model S0/S1/S2 vs CF free caps + 80%/95% hard-brake contract; §7 non-goals; §8 twelve acceptance tests (T1.1–T1.12).
+- VOL-10 (spec/10-mcp-gateway.md, 273 lines) written to founder's new architecture: /api/mcp/login front door asks for PAT or AAT (paste-path works signed-out); jontrix-gateway installable from npm + PyPI + GitHub binaries, logs in once (device flow / paste-token / CI env), talks to MCP from then on via stdio bridge; §2 token taxonomy jx_pat_/jx_aat_/jx_sess_ opaque+hashed, AAT cannot manage tokens; §4 full route table + request/response contracts (device issue/poll, tokens CRUD, tools ETag catalog, call pipeline, quota, single-use refresh w/ family revocation, well-known manifest) + 10-row error map; §5 gateway contract (P0 verb parity across all 3 builds, keyring→0600 fallback, exit codes 0–6, 3 TTL caches, <300ms spawn, zero telemetry, no auto-update); §6 four D1 tables (mcp_tokens, mcp_device_codes, mcp_usage_daily, mcp_idempotency); §7 metering + advisory pre-flight; §8 ten security invariants; §9 connect writers for 6 MCP hosts; §10 fourteen acceptance tests (T10.1–T10.14) + DoD hooks G-31..33.
+- Compliance check: zero function bodies/implementations in either volume; fenced blocks = 1 TS contract block (VOL-01), ASCII diagram + regex + scope contract + 3 JSON/TOML shape examples ≤5 lines (VOL-10).
+- Copied to download/spec/ as JONTRIX_SPEC_VOL-00/01/10 (user-facing).
+
+Stage Summary:
+- Spec style is now contracts-only by LOCKED rule; every future volume (02–09, 11–15) must follow it.
+- MCP surface re-architected to founder spec: /api/mcp/login (PAT/AAT) + jontrix-gateway (npm/pip/binaries) as the sole canonical client path; remote Streamable-HTTP /mcp exists only as undocumented advanced path.
+- Tier ladder canon: Free/Pro/Studio/Max at $0/4.99/9.99/19.99; Stars 400/750/1500 monthly-only; USDT monthly+annual ×10.
+- Remaining volumes to write: 02 (research digest), 03 (monorepo/data), 04 (schema), 05 (platform core), 06 (billing), 07 (PWA), 08 (bot/MiniApp), 09 (extension), 11 (runtime), 12 (top-50 cards), 13 (long-tail catalog), 14 (DoD/ops), 15 (ledgers).
