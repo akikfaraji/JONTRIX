@@ -19,7 +19,7 @@ const CONTEXT_LABEL: Record<string, string> = {
   hybrid: 'Hybrid',
 };
 
-export function ToolsView() {
+export function ToolsView({ onOpenTool }: { onOpenTool: (j: JontRecord) => void }) {
   const [items, setItems] = useState<JontRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -165,7 +165,13 @@ export function ToolsView() {
           <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {shown.map((j) => (
-                <Card key={j.id} className="border transition-colors hover:border-input">
+                <Card
+                  key={j.id}
+                  className="cursor-pointer border transition-colors hover:border-input"
+                  onClick={() => onOpenTool(j)}
+                  role="button"
+                  aria-label={`Open ${j.title}`}
+                >
                   <CardContent className="flex h-full flex-col gap-2 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium leading-snug">{j.title}</p>
