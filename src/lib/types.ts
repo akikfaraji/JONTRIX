@@ -6,6 +6,7 @@ export interface JontRecord {
   slug: string;
   pattern: string;
   context: 'client' | 'server' | 'hybrid';
+  status?: 'built' | 'planned' | 'disabled';
   tier_fit: 'FREE' | 'PRO' | 'MAX';
   platform_role: string;
   score: number;

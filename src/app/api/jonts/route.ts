@@ -23,6 +23,15 @@ export async function GET(req: Request) {
   if (context) where.context = context;
 
   try {
+    // keep registry statuses in sync with the engine registry before reading
+    // (deploy-safe path shared with the run route) so the UI can render
+    // honest built/planned states without a stale deploy race
+    const { getBuiltJontIds } = await import('@/lib/jont-runtime/engines');
+    await db.jont.updateMany({
+      where: { id: { in: getBuiltJontIds() }, status: { not: 'built' } },
+      data: { status: 'built' },
+    });
+
     const rows = await db.jont.findMany({
       where,
       orderBy: sort === 'score' ? [{ score: 'desc' }, { id: 'asc' }] : [{ id: 'asc' }],
@@ -37,6 +46,7 @@ export async function GET(req: Request) {
       slug: r.seoSlug,
       pattern: r.family,
       context: r.context,
+      status: r.status,
       tier_fit: r.tierFit,
       platform_role: r.platformRole,
       score: r.score,

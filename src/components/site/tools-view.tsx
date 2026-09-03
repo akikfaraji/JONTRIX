@@ -28,6 +28,7 @@ export function ToolsView({ onOpenTool }: { onOpenTool: (j: JontRecord) => void 
   const [tier, setTier] = useState('all');
   const [pattern, setPattern] = useState('all');
   const [context, setContext] = useState('all');
+  const [ready, setReady] = useState('all');
   const [visible, setVisible] = useState(PAGE);
 
   useEffect(() => {
@@ -59,9 +60,11 @@ export function ToolsView({ onOpenTool }: { onOpenTool: (j: JontRecord) => void 
       if (tier !== 'all' && i.tier_fit !== tier) return false;
       if (pattern !== 'all' && i.pattern !== pattern) return false;
       if (context !== 'all' && i.context !== context) return false;
+      if (ready === 'ready' && i.status !== 'built') return false;
+      if (ready === 'planned' && i.status === 'built') return false;
       return true;
     });
-  }, [items, query, tier, pattern, context]);
+  }, [items, query, tier, pattern, context, ready]);
 
   const shown = filtered.slice(0, visible);
 
@@ -126,6 +129,21 @@ export function ToolsView({ onOpenTool }: { onOpenTool: (j: JontRecord) => void 
               <ToggleGroupItem value="all" variant="outline">Anywhere</ToggleGroupItem>
               <ToggleGroupItem value="client" variant="outline">In-browser</ToggleGroupItem>
               <ToggleGroupItem value="server" variant="outline">Server-side</ToggleGroupItem>
+            </ToggleGroup>
+
+            <ToggleGroup
+              type="single"
+              value={ready}
+              size="sm"
+              onValueChange={(v) => {
+                setReady(v || 'all');
+                reset();
+              }}
+              aria-label="Filter by build status"
+            >
+              <ToggleGroupItem value="all" variant="outline">Any status</ToggleGroupItem>
+              <ToggleGroupItem value="ready" variant="outline">Ready to run</ToggleGroupItem>
+              <ToggleGroupItem value="planned" variant="outline">Planned</ToggleGroupItem>
             </ToggleGroup>
 
             <ToggleGroup
@@ -202,6 +220,20 @@ export function ToolsView({ onOpenTool }: { onOpenTool: (j: JontRecord) => void 
                       <span className="capitalize">{j.pattern}</span>
                       <span aria-hidden="true">·</span>
                       <span className="font-mono">{j.score.toFixed(1)}</span>
+                      {j.status && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span
+                            className={
+                              j.status === 'built'
+                                ? 'font-medium text-foreground'
+                                : ''
+                            }
+                          >
+                            {j.status === 'built' ? 'ready' : 'planned'}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
