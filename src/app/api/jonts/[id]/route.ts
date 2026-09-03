@@ -5,6 +5,7 @@
 import { db } from '@/lib/db';
 import { fail, ok, ERR } from '@/lib/envelope';
 import { getServerEngine } from '@/lib/jont-runtime/engines';
+import { getClientEngine } from '@/lib/jont-runtime/client-engines';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const row = await db.jont.findUnique({ where: { id } });
   if (!row) return fail(ERR.NOT_FOUND, 'NOT_FOUND', 'no such Jont');
 
-  const engine = getServerEngine(row.id);
+  // The engine manifest (server OR client) is the source for the input schema;
+  // the registry row is its projection.
+  const engine = getServerEngine(row.id) ?? getClientEngine(row.id);
   return ok({
     jont: {
       id: row.id,

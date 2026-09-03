@@ -24,6 +24,8 @@ export interface JsonSchema {
   maximum?: number;
   description?: string;
   additionalProperties?: boolean;
+  /** Standard JSON Schema annotation; the run panel renders `textarea` for long text. */
+  format?: string;
 }
 
 /**
