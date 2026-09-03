@@ -12,9 +12,14 @@ is corrected.
 - Contracts: VOL-00 through VOL-16 complete. Legal review G-35 CLEARED (2026-09-03).
 - Platform: dashboard (PWA), tool runtime, MCP gateway server, Telegram bot + Boost,
   browser extension, gateway CLI, ledger and DoD tooling — built and acceptance-tested.
+- Tools: 40 of 247 Jonts have real engines today (25 server + 15 in-browser client
+  engines), including the CSV/JSON data-repair core, curl-to-code, the API error
+  decoder, the merchant-feed fixer, and the deterministic quiz generator. Every
+  unbuilt card says "planned" and refuses to pretend — build batches keep promoting
+  real engines.
 - Not yet live: npm/PyPI publication of the gateway (needs founder registry accounts),
   billing rails (Paddle/Stars are FALLBACK swap points per the decision register),
-  production deployment.
+  production deployment, AI-dependent tools (need a provider key).
 
 ## Layout
 
@@ -64,8 +69,8 @@ The extension is load-unpacked from `apps/extension` per its README.
 
 ## Versioning
 
-FRAZIYM format `VPP.FF.BBB-STAGE-RR`, currently `V00.00.000-beta-01`.
-Defined exactly once in `src/version.ts`; every surface imports it. `CHANGELOG.md` is the only
+FRAZIYM format `VPP.FF.BBB-STAGE-RR`. Defined exactly once in `src/version.ts`
+(the current value is recorded in `CHANGELOG.md`); every surface imports it. `CHANGELOG.md` is the only
 file allowed to repeat the literal. `npm run verify:version` enforces this.
 
 ## Principles

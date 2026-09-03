@@ -65,7 +65,11 @@ async function main() {
   // ── boost ceremony (§5) — direct DB + endpoint semantics ──
   const { db } = await import('../src/lib/db');
   // The claim requests below run under the tester's EMAIL session (the
-  // Mini App session path, §5) — assertions key off that user.
+  // Mini App session path, §5) — assertions key off that user. Provision it
+  // through the same helper the OTP verify route uses, so this sweep is
+  // self-contained on a fresh database.
+  const { upsertUserByEmail } = await import('../src/lib/auth');
+  await upsertUserByEmail('tester@jontrix.test');
   const emailUser = await db.user.findUnique({ where: { email: 'tester@jontrix.test' } });
   const user = emailUser;
   if (!user) throw new Error('tester email user missing — sign-in should have provisioned it');

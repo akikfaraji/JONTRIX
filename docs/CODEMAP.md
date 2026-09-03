@@ -71,6 +71,8 @@ has the contracts.
 ## Honest status of the tool catalog
 
 The catalog has 247 Jonts. Built tools are the ones listed in the two engine registries —
-everything else shows "planned" and refuses to pretend. That honesty rule (C5, VOL-11) is
-why most cards look like placeholders: they are placeholders that say so out loud, and each
-build batch promotes real engines, never fake ones.
+40 today (25 server engines + 15 client engines); everything else shows "planned" and
+refuses to pretend. That honesty rule (C5, VOL-11) is why most cards look like placeholders:
+they are placeholders that say so out loud, and each build batch promotes real engines,
+never fake ones. Client engines run in the browser through the run panel's form; server
+engines consume quota and are also reachable by agents through MCP.
