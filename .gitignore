@@ -1,2 +1,18 @@
+# Internal workspace — not part of the JONTRIX docs repository
 skills/
+tool-results/
+.z-ai/
+scripts/
 node_modules/
+worklog.md
+*.log
+.DS_Store
+
+# Raw research intermediates (curated corpus + frozen catalog are kept)
+research/s_b*.json
+research/batch_log.txt
+research/base_rows.json
+download/
+
+# Environment / secrets — never publish
+.env

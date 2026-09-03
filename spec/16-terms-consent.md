@@ -3,7 +3,7 @@
 **Document:** JONTRIX Build Specification — VOL-16
 **Publisher:** Fraziym Soft
 **Version:** 1.0 (2026-09-03)
-**Status:** LOCKED structure and rules; final legal wording is a founder review gate (AGENT REVIEW below)
+**Status:** LOCKED structure and rules; legal prose hardened and reviewed in the founder-directed G-35 pass of 2026-09-03 (findings F-1..F-9 folded in; founder countersign line pending in `docs/decisions.md`)
 **Depends on:** VOL-00 (C7, C8, D-03..D-06), VOL-04 §5 (consent_events, audit), VOL-05 §8 (consent endpoints), VOL-01 §5 (payment rails). Referenced by: VOL-07/08/09 (copy surfaces), VOL-14 (DoD), VOL-15 (ledger honesty).
 
 ---
@@ -19,12 +19,13 @@ JONTRIX is an honest product (C8) and this volume is where honesty becomes enfor
 1. **Who we are** — Fraziym Soft (publisher), JONTRIX (product), contact channel (support email + bot).
 2. **Accounts** — one human per account; accurate Telegram/email; you are responsible for your tokens (cross-ref §7); minimum age per applicable law.
 3. **The service** — one subscription unlocks the catalog (VOL-01 §3.1); features, quotas, and tiers as rendered in-app at purchase; we may change the catalog (additions are routine; removals are announced in-app ≥ 14 days ahead with the reason).
-4. **Payments** — Stars and USDT rails as specified in VOL-01 §5; **USDT/crypto payments are final — no refunds** (stated at checkout and here); Stars sales follow Telegram's own subscription/refund mechanics; you are responsible for your local taxes.
+4. **Payments** — Stars and USDT rails as specified in VOL-01 §5; **USDT/crypto payments are final — no refunds** (stated at checkout and here); Stars sales follow Telegram's own subscription/refund mechanics; you are responsible for your local taxes; nothing in the terms removes rights that mandatory consumer law grants you.
 5. **Your data & AI training** — the C6 promise (files processed in your browser never touch our servers unless you save them), retention horizons per tier, and the **AI-training consent rule in full (§6 of this volume)**: we never train on your data without your explicit, revocable, versioned permission.
 6. **Acceptable use** — cross-ref §3 of this volume; violations ladder to suspension (§9).
 7. **Disclaimers & liability cap** — service "as is" during beta stages (the FRAZIYM version string is shown in-app, so "beta" is provable, not vibes); liability capped at the last 12 months of fees paid or $50, whichever is higher.
 8. **Changes to terms** — versioned re-ask (VOL-05 §8): material changes trigger the consent re-ask banner; continued use after acknowledgment is acceptance.
 9. **Termination** — by you (account deletion, §4) and by us (abuse, §9), with data-handout windows stated.
+10. **Governing law & boilerplate** — the law of the publisher's jurisdiction (Bangladesh; venue choice is a founder sign-off item, `docs/decisions.md` G-35), informal resolution first (support email, 30-day good-faith window) before any formal forum, severability of any unenforceable clause, English text as the entire agreement.
 
 ## §3 Acceptable Use Policy (LOCKED)
 
@@ -39,7 +40,7 @@ JONTRIX is an honest product (C8) and this volume is where honesty becomes enfor
 
 ## §4 Privacy & Data Retention (LOCKED)
 
-`/privacy` states, in the same order, what exists and why: **(1)** account data (identity, tier, settings) — kept while the account lives; **(2)** usage metadata (`jont_usage`: tool, size, timing — never content) for metering and abuse defense; **(3)** saved results & presets — only on explicit save, retained per tier horizon (VOL-01 §4.2) then deleted by the expiry cron (VOL-04 §4), hidden-not-deleted on downgrade for 90 days (VOL-01 §4.4); **(4)** files — the C6 promise is the headline: *client-side processing means the file never leaves the browser*; server-side Jonts stream inputs and discard them with the request (VOL-11 §4), and that difference is labeled on every tool page; **(5)** consent & audit records (§6, VOL-04 §5) — kept to prove the promises. **Account deletion** (dashboard-only): tombstones the account, purges email/Telegram links, presets, results (D1 rows + R2 bodies), consent events retained in anonymized form only; the pipeline of §6 drops the user's data from the next snapshot build. The deletion path is self-service and completes within 24 h (cron), stated on the page.
+`/privacy` states, in the same order, what exists and why: **(1)** account data (identity, tier, settings) — kept while the account lives; **(2)** usage metadata (`jont_usage`: tool, size, timing — never content) for metering and abuse defense; **(3)** saved results, stored files & presets — only on explicit save, retained per tier horizon (VOL-01 §4.2) then deleted by the expiry cron (VOL-04 §4), hidden-not-deleted on downgrade for 90 days (VOL-01 §4.4); **(4)** files — the C6 promise is the headline: *client-side processing means the file never leaves the browser*; server-side Jonts stream inputs and discard them with the request (VOL-11 §4), and that difference is labeled on every tool page; **(5)** consent & audit records (§6, VOL-04 §5) — kept to prove the promises. **Account deletion** (dashboard-only): tombstones the account, purges email/Telegram links, presets, results (D1 rows + R2 bodies), consent events retained in anonymized form only; the pipeline of §6 drops the user's data from the next snapshot build. The deletion path is self-service and completes within 24 h (cron), stated on the page. Self-service export of everything the platform holds runs through the PAT data plane (VOL-05 §3.1, D-03) — data portability is a first-class promise, not a support ticket.
 
 ## §5 Payment Honesty Terms (LOCKED)
 
@@ -49,11 +50,11 @@ The payment-facing copy rules, restated as user-facing terms: prices render from
 
 The specific permission the founder required, as a machine-checkable contract:
 
-1. **The ask.** At onboarding (once) and in settings (always), every user is asked: *"May we use the data you save on JONTRIX (saved results, presets, and files you choose to store) to train future JONTRIX AI models? Default: No. You can change this anytime."* — two buttons, equal weight, no dark-pattern ordering (C8). "Decide later" = No until answered.
+1. **The ask.** At onboarding (once) and in settings (always), every user is asked: *"May we use the data you save on JONTRIX (saved results, presets, and files you choose to store) to train future JONTRIX AI models? Default: No. You can change this anytime."* — two buttons, equal weight, no dark-pattern ordering (C8), and the card links the full training-policy text of the `policy_version` a yes would bind (consent without the document one tap away is not informed consent). "Decide later" = No until answered.
 2. **Scope of "yes".** Covers **stored data only**: saved results, presets, and deliberately stored files. It never covers in-browser work (C6 — we cannot train on what we never receive), usage metadata, or identity. Each consent record binds `policy_version` (§2) so users know exactly which policy text their "yes" meant.
 3. **The machinery.** `users.ai_training_consent` + `consent_events` (VOL-04 §5); `POST /api/consent` (VOL-05 §8) is the only writer; every change is versioned and audited; a policy-text change bumps `policy_version` and triggers the re-ask banner — consent does **not** carry over silently to a new policy version.
-4. **The pipeline.** Training-data export is a standalone cron job, never a request handler: it selects only rows whose owner's consent = `granted` **at export time**, writes them to R2 `jontrix-training/batches/<policy_version>/<date>/` (VOL-04 §6), and logs the batch (count, users-hashed, version) to the audit log. **NEVER** a manual export, a interactive query path, or a batch that skips the consent predicate — the DoD proves this with a granted-user and a denied-user fixture.
-5. **Withdrawal.** Flipping to No is forward-looking and takes effect at the next export; the batch deletion procedure purges the user's rows from R2 batches within 30 days of withdrawal, stated in the policy text; already-trained models are disclosed honestly ("your data may remain in previously trained model weights; it will not appear in future training data").
+4. **The pipeline.** Training-data export is a standalone cron job, never a request handler: it selects only rows whose owner's consent = `granted` **at export time**, writes them to R2 `jontrix-training/batches/<policy_version>/<date>/` (VOL-04 §6), and logs the batch (count, users-hashed, version) to the audit log; when a training run consumes a batch, that consumption (run id, batch path, date) is logged the same way, so the §6.5 disclosure is checkable per user rather than assumed. **NEVER** a manual export, a interactive query path, or a batch that skips the consent predicate — the DoD proves this with a granted-user and a denied-user fixture.
+5. **Withdrawal.** Flipping to No is forward-looking: the **first export after the change already excludes the user's data** (the §6.4 predicate reads consent at export time), and the batch deletion procedure purges any already-exported copies from R2 within 30 days of withdrawal, stated in the policy text; already-trained models are disclosed honestly ("your data may remain in previously trained model weights; it will not appear in future training data").
 6. **Minimization promise.** We ask for permission we might never use: at launch, no training pipeline runs at all — the machinery ships dormant so the promise is testable from day one. When training starts (founder decision, recorded), this volume's §6.4/6.5 are already the law.
 
 ## §7 Token & API Ecosystem Rules (LOCKED)
@@ -66,7 +67,7 @@ Each rail's own rules are inherited and linked: **Telegram/Stars** — Mini App 
 
 ## §9 Enforcement Ladder (LOCKED)
 
-Graduated, documented, appealable: **(1)** automated throttle (burst/abuse windows, VOL-05 §5) — no human, no record beyond counters; **(2)** warning (email/bot) with the specific rule cited; **(3)** suspension of the offending capability (e.g., tokens revoked, boost disabled) for 7–30 days; **(4)** account suspension with data handout (30-day export window); **(5)** ban for the zero-tolerance set (§3.5) or ad fraud. Appeals: one channel (support email), answered within 7 days, decisions recorded. **NEVER** an und explained throttle (every 429/402 names its rule, C8), a silent ban, or an enforcement without an audit row.
+Graduated, documented, appealable: **(1)** automated throttle (burst/abuse windows, VOL-05 §5) — no human, no record beyond counters; **(2)** warning (email/bot) with the specific rule cited; **(3)** suspension of the offending capability (e.g., tokens revoked, boost disabled) for 7–30 days; **(4)** account suspension with data handout (30-day export window); **(5)** ban for the zero-tolerance set (§3.5) or ad fraud. Appeals: one channel (support email), answered within 7 days, decisions recorded. **NEVER** an unexplained throttle (every 429/402 names its rule, C8), a silent ban, or an enforcement without an audit row.
 
 ## §10 Copy Surfaces (LOCKED)
 
