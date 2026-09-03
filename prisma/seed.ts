@@ -1,11 +1,13 @@
 // Phase-1 seed (VOL-04 §7): 4 plan rows verbatim from src/lib/plans.ts,
-// 247 jonts rows from spec/catalog/jonts.seed.json.
+// 247 jonts rows from spec/catalog/jonts.seed.json, meta.version row.
+// Deterministic: same inputs → identical rows; re-runs upsert, never duplicate.
 // Run: npm run db:seed
 
 import { PrismaClient } from '@prisma/client';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PLANS_SEED } from '../src/lib/plans';
+import { VERSION } from '../src/version';
 
 const db = new PrismaClient();
 
@@ -69,6 +71,7 @@ async function main() {
         mcpExposed: r.mcp_exposed,
         seoSlug: r.seo?.slug ?? r.slug,
         faqJson: JSON.stringify(r.faq ?? []),
+        version: VERSION,
       },
       update: {
         family: r.pattern,
@@ -81,12 +84,21 @@ async function main() {
         mcpExposed: r.mcp_exposed,
         seoSlug: r.seo?.slug ?? r.slug,
         faqJson: JSON.stringify(r.faq ?? []),
+        version: VERSION,
       },
     });
     count++;
   }
   console.log(`jonts seeded: ${count}`);
   if (count !== 247) throw new Error(`expected 247 jonts, seeded ${count}`);
+
+  // VOL-04 §7: meta.version row — SQL reads the version from the single source.
+  await db.meta.upsert({
+    where: { key: 'version' },
+    create: { key: 'version', value: VERSION },
+    update: { value: VERSION },
+  });
+  console.log(`meta.version = ${VERSION}`);
 }
 
 main()

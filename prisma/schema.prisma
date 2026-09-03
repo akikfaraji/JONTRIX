@@ -1,7 +1,8 @@
 // JONTRIX data layer — shaped after VOL-04 (D1 column contracts), realized on
 // SQLite via Prisma per the founder's Node.js stack decision (D-07).
-// Conventions kept from VOL-04 §1: money as integer cents/Stars, UTC timestamps,
-// consent default-denied, no secrets at rest.
+// Conventions kept from VOL-04 §1: identifiers prefixed (usr_, tok_, pay_...),
+// money as integer cents/Stars, UTC timestamps, consent default-denied,
+// no secrets at rest (hashes only), append-only audit.
 
 generator client {
   provider = "prisma-client-js"
@@ -11,6 +12,8 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
+
+// ─── VOL-04 §4 plans + jonts (catalog) ─────────────────────────────────────
 
 // VOL-04 §4 `plans` — seeded once from src/lib/plans.ts (VOL-01 §4.1 verbatim).
 model Plan {
@@ -24,22 +27,26 @@ model Plan {
 
 // VOL-04 §4 `jonts` — catalog registry seeded from spec/catalog/jonts.seed.json.
 model Jont {
-  id           String  @id // jont_j001_<slug> per VOL-04
-  family       String // pattern family (VOL-13 family ids land with VOL-13 phase)
+  id           String   @id // jont_j001_<slug> per VOL-04
+  family       String // pattern family id (converter|validator|generator|extractor|fixer)
   title        String
   score        Float
   tierFit      String // FREE | PRO | MAX
   platformRole String // HOOK | GLUE | PRO | LTV
   context      String // client | server | hybrid
   description  String? // evidence-cited one-liner (VOL-07 §3 subtitle)
-  mcpExposed   Boolean @default(true)
-  seoSlug      String  @unique
+  manifestJson String   @default("{}") // VOL-11 §2 manifest (projection; manifest is the source)
+  mcpExposed   Boolean  @default(true)
+  seoSlug      String   @unique
   faqJson      String?
-  status       String  @default("planned") // planned | built | disabled
+  status       String   @default("planned") // planned | built | disabled
+  version      String // copied from src/version.ts at seed time — never a literal here
   createdAt    DateTime @default(now())
 
   @@index([family, score(sort: Desc)])
 }
+
+// ─── VOL-04 §3 identity & access ───────────────────────────────────────────
 
 // VOL-04 §3 `users` — consent machinery columns present from day one (D-05).
 model User {
@@ -51,13 +58,68 @@ model User {
   aiTrainingConsent String    @default("denied") // granted | denied (D-05)
   consentVersion    Int       @default(0)
   consentAskedAt    DateTime?
-  settingsJson      String    @default("{}")
+  settingsJson      String    @default("{}") // non-security prefs only (theme, export format)
   status            String    @default("active") // active | suspended | deleted
   createdAt         DateTime  @default(now())
   lastSeenAt        DateTime?
 
   entitlement Entitlement?
 }
+
+// VOL-04 §3 `auth_identities` — Telegram / email identity links.
+model AuthIdentity {
+  id          String   @id @default(cuid())
+  userId      String
+  provider    String // telegram | email
+  providerUid String // telegram id or normalized email
+  metaJson    String?
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, providerUid])
+  @@index([userId])
+}
+
+// VOL-04 §3 `sessions` — browser sessions (pwa | miniapp | dashboard).
+// Cookie contract (VOL-06 §2): jx_sess HttpOnly, Secure, SameSite=Lax;
+// 15-min access payload + 30 d single-use refresh rotation, family revocation.
+model Session {
+  id            String    @id @default(cuid())
+  userId        String
+  kind          String // pwa | miniapp | dashboard
+  hashSha256    String    @unique
+  createdIp     String?
+  userAgent     String?
+  refreshFamily String
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  @@index([userId])
+}
+
+// VOL-04 §3 + VOL-10 §6 `tokens` — unified registry: pat | aat | sess.
+// D-03: exactly one active PAT per user — enforced by the token factory
+// (the only writer, VOL-05 §6) checking count in the same transaction.
+model Token {
+  id          String    @id @default(cuid())
+  userId      String
+  kind        String // pat | aat | sess
+  name        String?
+  hashSha256  String    @unique
+  prefix      String
+  last4       String
+  scopesJson  String    @default("{}")
+  status      String    @default("active") // active | revoked | rotated
+  familyId    String?
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime?
+
+  @@index([userId, kind, status])
+}
+
+// ─── VOL-04 §4 billing, usage, presets, results ────────────────────────────
 
 // VOL-04 §4 `entitlements` — live tier + window + windowed counters.
 model Entitlement {
@@ -71,4 +133,197 @@ model Entitlement {
   updatedAt     DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id])
+}
+
+// VOL-04 §4 `webhook_events` — provider idempotency gate.
+// Unique (provider, id): a replayed webhook hits the index and is acked
+// without reprocessing (VOL-06 §5).
+model WebhookEvent {
+  id          String    @id // provider event id
+  provider    String // nowpayments | telegram | adsgram | paddle
+  payloadHash String
+  status      String    @default("received") // received | processed | ignored | failed
+  error       String?
+  receivedAt  DateTime  @default(now())
+
+  @@unique([provider, id])
+}
+
+// VOL-04 §4 `payments` — one row per successful charge (both rails).
+model Payment {
+  id                  String   @id @default(cuid())
+  userId              String
+  rail                String // stars | usdt
+  planTier            String
+  billingPeriod       String // monthly | annual
+  amount              Int // Stars or cents — never floats
+  currency            String
+  processorFeeEstCents Int?
+  netEstCents         Int?
+  windowExpires       DateTime
+  webhookEventId      String?
+  createdAt           DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// VOL-04 §4 `invoices` — USDT NOWPayments rail.
+model Invoice {
+  id             String    @id @default(cuid())
+  userId         String
+  planTier       String
+  billingPeriod  String
+  npInvoiceId    String    @unique
+  amountUsdCents Int
+  payAddress     String?
+  network        String?
+  status         String    @default("pending") // pending | confirmed | expired | failed
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, status])
+}
+
+// VOL-04 §4 `jont_usage` — per-call ledger, meter of record (VOL-15).
+// One insert per server-side call; client-side runs never hit the server (C6).
+model JontUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  toolId    String
+  source    String // pwa | miniapp | extension | mcp | api_v1
+  tokenId   String?
+  ms        Int?
+  bytesIn   Int      @default(0)
+  bytesOut  Int      @default(0)
+  status    String // ok | client_error | server_error
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// VOL-04 §4 `presets` — saved tool inputs; count caps (3/50/unlimited)
+// enforced in the middleware (VOL-05 §4), never by query.
+model Preset {
+  id          String   @id @default(cuid())
+  userId      String
+  toolId      String
+  name        String
+  payloadJson String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, toolId])
+}
+
+// VOL-04 §4 `results` — saved result metadata; bodies > 64 KB live in object
+// storage (r2Key), smaller inline. Free rows are never inserted (history_days=0).
+model Result {
+  id         String   @id @default(cuid())
+  userId     String
+  toolId     String
+  r2Key      String?
+  bodyText   String?
+  bodySha256 String?
+  bytes      Int?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+// ─── VOL-04 §5 compliance, boost, audit (D-02 / D-05) ──────────────────────
+
+// VOL-04 §5 `boost_ledger` — rewarded-ad quota grants (D-02).
+// Grant only after verified AdsGram reward callback; daily cap 2 via
+// indexed count before insert — a third insert is refused, never truncated.
+model BoostLedger {
+  id          String   @id @default(cuid())
+  userId      String // usr_… or anon_<hash>
+  adSessionId String
+  amount      Int      @default(10)
+  utcDay      String // YYYYMMDD
+  grantedAt   DateTime @default(now())
+
+  @@index([userId, utcDay])
+}
+
+// VOL-04 §5 `consent_events` — AI-training consent audit (D-05).
+// Exactly one row per consent change, same transaction as the users write.
+model ConsentEvent {
+  id            String   @id @default(cuid())
+  userId        String
+  fromState     String?
+  toState       String // granted | denied
+  policyVersion Int
+  surface       String // onboarding | settings | re-ask
+  at            DateTime @default(now())
+
+  @@index([userId, at])
+}
+
+// VOL-04 §5 `audit_log` — security/compliance events; ids and codes only,
+// NEVER request bodies or payloads in metaJson (VOL-10 §8.8 platform-wide).
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorKind String // user_session | pat | aat | system | founder
+  actorId   String?
+  event     String // token.created | token.revoked | token.rotated | session.family_revoked
+  // | consent.changed | account.deleted | grant.revoked | boost.granted
+  // | billing.webhook_failed | mode.brake_flipped
+  subject   String?
+  metaJson  String?
+  at        DateTime @default(now())
+
+  @@index([subject, at])
+}
+
+// ─── VOL-10 §6 MCP tables ──────────────────────────────────────────────────
+
+// VOL-10 §6 `mcp_device_codes` — device-approval flow for /api/mcp/login.
+model McpDeviceCode {
+  deviceHash String   @id
+  userCode   String   @unique
+  status     String   @default("pending") // pending | approved | denied | consumed | expired
+  agentName  String?
+  clientHint String?
+  issuedIp   String?
+  tokenId    String?
+  issuedAt   DateTime @default(now())
+  expiresAt  DateTime
+  pollCount  Int      @default(0)
+}
+
+// VOL-10 §6 `mcp_usage_daily` — MCP-side rollup; per-call ledger stays jont_usage.
+model McpUsageDaily {
+  tokenId  String
+  day      String // YYYYMMDD
+  calls    Int    @default(0)
+  msTotal  Int    @default(0)
+  bytesIn  Int    @default(0)
+  bytesOut Int    @default(0)
+  error4xx Int    @default(0)
+  error5xx Int    @default(0)
+
+  @@id([tokenId, day])
+}
+
+// VOL-10 §6 `mcp_idempotency` — replay protection; TTL 24 h via hourly cron.
+model McpIdempotency {
+  tokenId     String
+  idemKey     String
+  callId      String
+  status      Int
+  responseRef String? // object-storage key for large bodies; inline JSON <= 4 KB
+  createdAt   DateTime @default(now())
+
+  @@id([tokenId, idemKey])
+}
+
+// ─── VOL-04 §7 meta (version row) ──────────────────────────────────────────
+
+// One-row-per-key table; `version` key copies src/version.ts at seed time so
+// even SQL reports read the version from the single source (VOL-00 §0.7).
+model Meta {
+  key   String @id
+  value String
 }
