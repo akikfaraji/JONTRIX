@@ -113,6 +113,8 @@ jontrix/
     config/                     # eslint, tsconfig, vitest presets
   spec/                         # THIS specification, kept in-repo
     catalog/jonts.seed.json     # generated from VOL-13
+  src/
+    version.ts                  # FRAZIYM VERSION — single authoritative source (VOL-00 §0.7)
   docs/
     decisions.md                # append-only decision log (required)
     dod-report.md               # DoD sweep results
@@ -146,3 +148,38 @@ Research claims in this spec carry a grade from the founder's research corpus, k
 - **E3** — inference or hypothesis marked as such by the researcher. Treat as a guess to validate cheaply after launch; do not over-invest.
 
 The full corpus lives in `research/` (seven streams: data-repair, devtools, ecom-smb, distribution-weird, ai-providers, infra, payments). VOL-02 condenses what matters; VOL-15 carries the ledgers. You never need to re-research: priorities are already computed and frozen in `research/opportunities.json` (247 rows, 38 fields, 10-dimension weighted score). When a Jont card says "score 7.58," that number comes from that file.
+
+---
+
+## 0.7 The FRAZIYM Versioning System (LOCKED)
+
+This project does **not** use conventional semantic versioning. It uses the official **FRAZIYM versioning format**, defined once here and enforced everywhere:
+
+```
+VPP.FF.BBB-STAGE-RR
+│  │  │    │     │
+│  │  │    │     └── Pre-release revision (01, 02, …) — counts publications within the current (generation, stage) pair
+│  │  │    └──────── Release stage (-alpha | -beta | -rc; omitted entirely when stable)
+│  │  └───────────── Bug-fix version (000, 001, …)
+│  └──────────────── Feature version (00, 01, …)
+└─────────────────── Platform generation (V00, V01, …)
+```
+
+Canonical examples, which double as the conformance fixtures for every version parser you write:
+
+| Version | Meaning |
+|---------|---------|
+| `V00.00.000-beta-01` | Initial beta foundation |
+| `V00.01.000-beta-02` | First feature release — working bot platform |
+| `V00.01.003-beta-04` | Feature release, 3 bug fixes since it, 4th beta revision |
+| `V01.00.000` | Stable release (stage and revision omitted) |
+
+**Bump rules (LOCKED):** precedence is PP > FF > BBB > RR. Bump **PP** only on a platform-generation change — a breaking architectural migration or a founder-directed generation jump — and reset FF→`00`, BBB→`000`, RR→`01` at the next pre-release. Bump **FF** on every shipped feature release (a new Jont batch, a new surface capability) and reset BBB→`000`; RR keeps counting. Bump **BBB** by one per accumulated bug-fix batch; RR keeps counting. Bump **RR** on every pre-release publication within the current (PP, stage) pair; moving alpha→beta→rc resets RR→`01`; reaching stable deletes `-STAGE-RR` entirely. Zero-padding is mandatory and exact: FF two digits, BBB three, RR two.
+
+**Single source of truth (LOCKED):** the one authoritative version string is `src/version.ts`:
+
+```ts
+export const VERSION = 'V00.00.000-beta-01' as const;
+```
+
+Every component — API, MCP worker, PWA, extension, gateway, health endpoints, logs, release metadata, the dashboard — imports `VERSION` from there. **NEVER** write a version literal in any other file. The build contract: `apps/api` and `apps/mcp` surface it in `/health` (VOL-05 §7); the PWA about-screen and extension about-page render it verbatim; the gateway reads it at build time from the same file (its own package version is derived, §0.7 below). Package registries force semver, so CI **derives** npm/PyPI versions mechanically — strip the `V`, map `V00.01.003-beta-04` → `0.1.3-beta.4` — and the derived value is written at publish time, never hand-edited. CI carries a **version-hygiene check**: a grep proves the full version regex `V\d{2}\.\d{2}\.\d{3}(-[a-z]+-\d{2})?` appears in exactly one source file (`src/version.ts`) plus the append-only `CHANGELOG.md`; any other hit fails the build. `CHANGELOG.md` records one line per published version in ascending order — version, UTC date, phase/feature summary — and is the only file allowed to repeat the string.
