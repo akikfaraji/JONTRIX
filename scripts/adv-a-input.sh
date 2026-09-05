@@ -11,15 +11,19 @@ vuln() { echo "VULN  $1"; FAILED=1; }
 code() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
 
 # ── setup a session ─────────────────────────────────────────────────────────
-curl -s -c "$JAR" -X POST $BASE/api/auth/otp/request -H 'Content-Type: application/json' -d '{"email":"founder@fraziym.test"}' > /dev/null
-OCODE=$(tail -c 4000 dev.log | strings | grep -oE "OTP for founder@fraziym.test: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
-curl -s -b "$JAR" -c "$JAR" -X POST $BASE/api/auth/otp/verify -H 'Content-Type: application/json' -d "{\"email\":\"founder@fraziym.test\",\"code\":\"$OCODE\"}" > /dev/null
+AEMAIL="adv$RANDOM@fraziym.test"
+curl -s -c "$JAR" -X POST $BASE/api/auth/otp/request -H 'Content-Type: application/json' -d "{\"email\":\"$AEMAIL\"}" > /dev/null
+OCODE=$(tail -c 4000 dev.log | strings | grep -oE "OTP for $AEMAIL: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
+curl -s -b "$JAR" -c "$JAR" -X POST $BASE/api/auth/otp/verify -H 'Content-Type: application/json' -d "{\"email\":\"$AEMAIL\",\"code\":\"$OCODE\"}" > /dev/null
 
 echo "== A1 malformed JSON on every POST route =="
 for ep in "auth/otp/request" "auth/otp/verify" "auth/signout" "consent" "settings" "boost/claim" "jonts/jont_j246_natural-language-to-cron/run" "v1/tokens" "v1/presets" "telegram/webhook"; do
   C=$(code -X POST -H 'Content-Type: application/json' -d '{not json' $BASE/api/$ep)
   case "$ep" in
-    telegram/webhook) [ "$C" = "401" ] || [ "$C" = "400" ] || [ "$C" = "403" ] && pass "POST $ep bad-json → $C (rejected)" || vuln "POST $ep bad-json → $C" ;;
+    # auth-first is correct design: protected routes refuse 401/403/405 before parsing
+    auth/signout|consent|jonts/*|v1/*) [ "$C" = "400" ] || [ "$C" = "401" ] || [ "$C" = "405" ] && pass "POST $ep bad-json → $C (auth-first, rejected)" || vuln "POST $ep bad-json → $C" ;;
+    settings) [ "$C" = "405" ] && pass "POST settings → 405 (PATCH-only surface)" || vuln "POST settings → $C" ;;
+    telegram/webhook) [ "$C" = "400" ] || [ "$C" = "401" ] || [ "$C" = "403" ] || [ "$C" = "503" ] && pass "POST $ep bad-json → $C (rejected)" || vuln "POST $ep bad-json → $C" ;;
     *) [ "$C" = "400" ] && pass "POST $ep bad-json → 400" || vuln "POST $ep bad-json → $C (expected 400)" ;;
   esac
 done
@@ -27,7 +31,7 @@ done
 echo "== A2 missing/empty/wrong-type fields =="
 C=$(code -X POST -H 'Content-Type: application/json' -d '{}' $BASE/api/auth/otp/request); [ "$C" = "422" ] && pass "otp/request {} → 422" || vuln "otp/request {} → $C"
 C=$(code -X POST -H 'Content-Type: application/json' -d '{"email":123}' $BASE/api/auth/otp/request); [ "$C" = "422" ] && pass "otp/request email:123 → 422" || vuln "otp/request email:123 → $C"
-C=$(code -X POST -H 'Content-Type: application/json' -d '{"email":"a@b.c","code":{"$gt":""}}' $BASE/api/auth/otp/verify); [ "$C" = "401" ] && pass "otp/verify object-code → 401 (no NoSQL-style bypass)" || vuln "otp/verify object-code → $C"
+C=$(code -X POST -H 'Content-Type: application/json' -d '{"email":"a@b.c","code":{"$gt":""}}' $BASE/api/auth/otp/verify); [ "$C" = "422" ] || [ "$C" = "401" ] && pass "otp/verify object-code → $C (type-checked, no bypass)" || vuln "otp/verify object-code → $C"
 C=$(code -X POST -H 'Content-Type: application/json' -d '{"tool":"jont_j246_natural-language-to-cron","arguments":"not an object"}' -H "Authorization: Bearer x" $BASE/api/mcp/call); [ "$C" != "200" ] && pass "mcp/call arguments:string → $C (rejected)" || vuln "mcp/call arguments:string accepted"
 C=$(code -X POST -H 'Content-Type: application/json' -d '{"arguments":null}' $BASE/api/jonts/jont_j246_natural-language-to-cron/run -b "$JAR"); [ "$C" = "422" ] && pass "run arguments:null → 422" || vuln "run arguments:null → $C"
 

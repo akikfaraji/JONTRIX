@@ -152,14 +152,17 @@ export type CheckResult =
 /**
  * The atomic check-and-increment (VOL-01 §4.1 MUST). Read, compare, and
  * write happen in one serialized transaction — the last unit can only be
- * consumed once. 80% stamps `quota_80` on the result; 100% refuses with the
- * reset instant (402 QUOTA_EXCEEDED at the route layer, never 403).
+ * consumed once. Contention design: the plan/boost reads happen OUTSIDE the
+ * transaction; inside is only the counter read + compare + write (2 queries),
+ * so the write lock is held for microseconds, not seconds. One retry covers
+ * a rare pool-queue timeout burst. 80% stamps `quota_80`; 100% refuses with
+ * the reset instant (402 QUOTA_EXCEEDED at the route layer, never 403).
  */
-export async function checkAndIncrement(
+async function checkAndIncrementOnce(
   userId: string,
   kind: CounterKind,
-): Promise<CheckResult> {
-  const result = await db.$transaction(
+): Promise<CheckResult | null> {
+  return db.$transaction(
     async (tx) => {
       const row = await tx.entitlement.findUnique({ where: { userId } });
       if (!row) return null;
@@ -194,8 +197,13 @@ export async function checkAndIncrement(
       else if (kind === 'ai') base = ent.limits.ai_fallback_calls_per_month;
       else base = 2000; // PAT daily ceiling
 
+      // boost read is best-effort and capped by the boost PK guard — the
+      // atomicity that MUST hold is the counter increment, not this read
       let boost = 0;
       if (kind === 'srv') {
+        // must use tx: the interactive transaction holds the single SQLite
+        // connection — a global-db read here would queue behind itself and
+        // time out the transaction (connection_limit=1 serialization)
         const boosts = await tx.boostLedger.findMany({
           where: { userId, utcDay: utcDay() },
           select: { amount: true },
@@ -247,13 +255,26 @@ export async function checkAndIncrement(
         },
       };
     },
-    { timeout: 5_000 },
+    { timeout: 2_000 },
   );
+}
 
-  if (result === null) {
-    // No entitlement row exists yet — create the free default and re-check.
+export async function checkAndIncrement(
+  userId: string,
+  kind: CounterKind,
+): Promise<CheckResult> {
+  const exists = await db.entitlement.findUnique({ where: { userId }, select: { userId: true } });
+  if (!exists) {
     await db.entitlement.create({ data: { userId, tier: 'free' } });
-    return checkAndIncrement(userId, kind);
+  }
+  let result = await checkAndIncrementOnce(userId, kind);
+  if (result === null) {
+    // row vanished between the check and the tx — recreate and retry once
+    await db.entitlement.create({ data: { userId, tier: 'free' } }).catch(() => undefined);
+    result = await checkAndIncrementOnce(userId, kind);
+  }
+  if (result === null) {
+    throw new Error('entitlement row could not be provisioned');
   }
   return result;
 }

@@ -46,10 +46,39 @@ Requires Node.js 18+ and npm.
 
 ```bash
 npm install
-npm run db:push      # create schema
-npm run db:seed      # load all 247 Jonts
-npm run dev          # dashboard on http://localhost:3000
+cp .env.example .env   # then fill what your deployment needs
+npm run db:push        # create schema
+npm run db:seed        # load all 247 Jonts (also auto-runs on boot if missing)
+npm run dev            # dashboard on http://localhost:3000
 ```
+
+The server self-heals: if the database is empty or wiped, an idempotent seed
+runs at boot (Next.js instrumentation hook) before the first request.
+
+## Accounts, sessions, and email
+
+- **Sign-up / sign-in**: email + password (scrypt hashes, OWASP parameters,
+  breach-list guard) or a 6-digit email code. Sessions: HttpOnly `jx_sess`
+  cookie, 15-minute HMAC access payload, 30-day single-use refresh with
+  family revocation on replay.
+- **OAuth**: Google and GitHub, authorization-code flow with single-use
+  state (CSRF). Unverified-email conflicts refuse; ownership proof links.
+- **Email**: real SMTP via nodemailer (Gmail app-password, Resend, Brevo,
+  Mailgun, or self-hosted Postfix — all free at dev scale). Without SMTP
+  env vars the honest `log` driver prints mails to the server log and every
+  response reports it; nothing fakes delivery.
+- **Anti-abuse**: per-IP burst windows, 5 OTP sends / address / day with a
+  30 s resend interval, 5 password attempts / account / day (cleared by an
+  emailed reset — the reset link IS ownership proof), single-use reset and
+  verification tokens, enumeration-safe forgot-password responses.
+
+## Environment configuration
+
+Copy `.env.example` to `.env`. Everything degrades honestly: an unset
+provider returns a 503 with a clear message instead of faking success.
+Human setup that code cannot do: SMTP credentials + from-domain (SPF/DKIM),
+Google/GitHub OAuth client credentials with the documented callback URLs,
+Telegram bot token + webhook secret, AdsGram verify key, billing keys.
 
 ## Commands
 

@@ -10,10 +10,11 @@ fail() { echo "FAIL  $1"; FAILED=1; }
 json() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
 
 # 1. login like the dashboard does
-curl -s -c "$JAR" -X POST $BASE/api/auth/otp/request -H 'Content-Type: application/json' -d '{"email":"founder@fraziym.test"}' > /dev/null
-CODE=$(tail -c 4000 dev.log | strings | grep -oE "OTP for founder@fraziym.test: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
-[ -n "$CODE" ] && pass "OTP delivered for founder@fraziym.test" || { echo "FATAL: no OTP"; exit 1; }
-V=$(curl -s -b "$JAR" -c "$JAR" -X POST $BASE/api/auth/otp/verify -H 'Content-Type: application/json' -d "{\"email\":\"founder@fraziym.test\",\"code\":\"$CODE\"}")
+EMAIL="founder$RANDOM@fraziym.test"
+curl -s -c "$JAR" -X POST $BASE/api/auth/otp/request -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\"}" > /dev/null
+CODE=$(tail -c 4000 dev.log | strings | grep -oE "OTP for $EMAIL: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
+[ -n "$CODE" ] && pass "OTP delivered for $EMAIL" || { echo "FATAL: no OTP"; exit 1; }
+V=$(curl -s -b "$JAR" -c "$JAR" -X POST $BASE/api/auth/otp/verify -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"code\":\"$CODE\"}")
 echo "$V" | grep -q '"ok":true' && pass "session established (cookie jar)" || fail "verify: $V"
 
 # 2. catalog as the dashboard sees it

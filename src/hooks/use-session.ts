@@ -18,6 +18,8 @@ export interface MeRecord {
   handle: string;
   display_name: string | null;
   email: string | null;
+  email_verified?: boolean;
+  has_password?: boolean;
   tier: 'free' | 'pro' | 'studio' | 'max';
   source: string | null;
   window: { starts_at: string | null; expires_at: string | null };

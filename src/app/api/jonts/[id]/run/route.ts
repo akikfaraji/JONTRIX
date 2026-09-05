@@ -8,7 +8,7 @@ import { getSessionAuth } from '@/lib/auth';
 import { authenticateBearer } from '@/lib/bearer';
 import { ok, fail, ERR } from '@/lib/envelope';
 import { checkAndIncrement, refundCounter, resolveEntitlement } from '@/lib/entitlements';
-import { dispatchServerJont, preflightJont } from '@/lib/jont-runtime/dispatch';
+import { dispatchServerJont, preflightJont, tryAcquireSlot, releaseSlot } from '@/lib/jont-runtime/dispatch';
 import { getBuiltJontIds } from '@/lib/jont-runtime/engines';
 import { db } from '@/lib/db';
 import { readJsonWithLimit } from '@/lib/validate';
@@ -83,6 +83,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return fail(503, 'TOOL_UNAVAILABLE', preflight.message);
   }
 
+  // concurrency slot BEFORE quota (VOL-11 §4(3) + honest metering): a 429
+  // for a busy slot must never have consumed a unit. The slot is released in
+  // every path below.
+  const ent0 = await resolveEntitlement(userId);
+  if (!tryAcquireSlot(userId, ent0.limits.concurrent_jobs)) {
+    return fail(ERR.RATE_LIMITED, 'RATE_LIMITED', `concurrent run limit reached (${ent0.limits.concurrent_jobs}) — retry after the current run finishes`);
+  }
+
+  try {
   // atomic quota consumption (VOL-05 §5) — the gate precedes every dispatch
   const gate = await checkAndIncrement(userId, 'srv');
   if (!gate.allowed) {
@@ -98,6 +107,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     concurrentJobs: ent.limits.concurrent_jobs,
     source,
     tokenId,
+    slotHeld: true,
   });
 
   if (!outcome.ok) {
@@ -147,4 +157,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     },
   );
+  } finally {
+    releaseSlot(userId);
+  }
 }

@@ -11,10 +11,10 @@ fail() { echo "FAIL  $1"; FAILED=1; }
 json() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)" 2>/dev/null; }
 code() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
 # paced login (the per-IP burst limiter is 10 req/10 s — stay under it)
-llogin() { sleep 1.1; curl -s "$@" -X POST -H 'Content-Type: application/json' "$BASE/api/auth/login"; }
-lcode() { sleep 1.1; curl -s -o /dev/null -w "%{http_code}" "$@" -X POST -H 'Content-Type: application/json' "$BASE/api/auth/login"; }
+llogin() { sleep 1.4; curl -s "$@" -X POST -H 'Content-Type: application/json' "$BASE/api/auth/login"; }
+lcode() { sleep 1.4; curl -s -o /dev/null -w "%{http_code}" "$@" -X POST -H 'Content-Type: application/json' "$BASE/api/auth/login"; }
 
-EMAIL="alice+$RANDOM@fraziym.test"
+EMAIL="alice$RANDOM@fraziym.test"
 PW="correct-horse-battery-7"
 
 echo "== B1 registration validation =="
@@ -35,7 +35,7 @@ C=$(code -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\
 echo "== B2 login =="
 C=$(lcode -d "{\"email\":\"$EMAIL\",\"password\":\"wrong-pass-99\"}")
 [ "$C" = "401" ] && pass "login wrong password → 401" || fail "login wrong → $C"
-C=$(lcode -d '{"email":"nobody@nowhere.zz","password":"wrong-pass-99"}')
+C=$(lcode -d "{\"email\":\"ghost$RANDOM@nowhere.zz\",\"password\":\"wrong-pass-99\"}")
 [ "$C" = "401" ] && pass "login unknown email → 401 (same shape)" || fail "login unknown → $C"
 rm -f "$JAR2"
 R=$(llogin -c "$JAR2" -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}")
@@ -43,7 +43,7 @@ R=$(llogin -c "$JAR2" -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}")
 
 echo "== B3 login lockout (5 fails/day) =="
 for i in 1 2 3 4 5; do
-  sleep 1.1
+  sleep 1.4
   curl -s -o /dev/null -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"wrong-pass-99\"}" $BASE/api/auth/login
 done
 C=$(lcode -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}")
@@ -52,7 +52,7 @@ C=$(lcode -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}")
 echo "== B4 forgot/reset (recovery from lockout) =="
 R=$(curl -s -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\"}" $BASE/api/auth/password/forgot)
 [ "$(echo "$R" | json "['ok']")" = "True" ] && pass "forgot → always-200 generic response" || fail "forgot: $R"
-R2=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"email":"ghost@nowhere.zz"}' $BASE/api/auth/password/forgot)
+R2=$(curl -s -X POST -H 'Content-Type: application/json' -d "{\"email\":\"ghost$RANDOM@nowhere.zz\"}" $BASE/api/auth/password/forgot)
 [ "$(echo "$R" | json "['data']['message']")" = "$(echo "$R2" | json "['data']['message']")" ] && pass "forgot response identical for known/unknown email (no enumeration)" || fail "enumeration leak"
 sleep 1
 TOKEN=$(tail -n 400 dev.log | grep -oiE "reset-password\?token=[A-Za-z0-9_-]+" | tail -1 | sed 's/.*token=//')
@@ -108,14 +108,15 @@ C=$(code "$BASE/api/auth/oauth/google/callback?code=x&state=y")
 
 echo "== B9 OTP regression (still works alongside passwords) =="
 JAR3=/tmp/jx-auth-cookies-3.txt; rm -f "$JAR3"
-C=$(code -c "$JAR3" -X POST -H 'Content-Type: application/json' -d '{"email":"founder@fraziym.test"}' $BASE/api/auth/otp/request)
+OTPE="otpu$RANDOM@fraziym.test"
+C=$(code -c "$JAR3" -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$OTPE\"}" $BASE/api/auth/otp/request)
 [ "$C" = "200" ] && pass "otp request → 200 (driver reported)" || fail "otp request → $C"
-OC=$(tail -c 3000 dev.log | grep -oE "OTP for founder@fraziym\.test: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
-R=$(curl -s -b "$JAR3" -c "$JAR3" -X POST -H 'Content-Type: application/json' -d "{\"email\":\"founder@fraziym.test\",\"code\":\"$OC\"}" $BASE/api/auth/otp/verify)
+OC=$(tail -c 3000 dev.log | grep -oE "OTP for $OTPE: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
+R=$(curl -s -b "$JAR3" -c "$JAR3" -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$OTPE\",\"code\":\"$OC\"}" $BASE/api/auth/otp/verify)
 [ "$(echo "$R" | json "['ok']")" = "True" ] && pass "otp verify → session (coexists with password auth)" || fail "otp verify: $R"
 
 echo "== B10 OTP resend-interval anti-flood =="
-C=$(code -b "$JAR3" -X POST -H 'Content-Type: application/json' -d '{"email":"founder@fraziym.test"}' $BASE/api/auth/otp/request)
+C=$(code -b "$JAR3" -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$OTPE\"}" $BASE/api/auth/otp/request)
 [ "$C" = "429" ] && pass "immediate second otp request → 429 (30s resend interval)" || fail "resend interval → $C"
 
 echo "───"

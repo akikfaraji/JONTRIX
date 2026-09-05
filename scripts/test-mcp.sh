@@ -12,9 +12,10 @@ FAILED=0
 json() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
 
 # ── setup: session + AAT + PAT ─────────────────────────────────────────────
-curl -s -c "$JAR" -X POST $BASE/api/auth/otp/request -H 'Content-Type: application/json' -d '{"email":"founder@fraziym.test"}' > /dev/null
-CODE=$(tail -c 4000 dev.log | strings | grep -oE "OTP for founder@fraziym.test: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
-curl -s -b "$JAR" -c "$JAR" -X POST $BASE/api/auth/otp/verify -H 'Content-Type: application/json' -d "{\"email\":\"founder@fraziym.test\",\"code\":\"$CODE\"}" > /dev/null
+EMAIL="founder$RANDOM@fraziym.test"
+curl -s -c "$JAR" -X POST $BASE/api/auth/otp/request -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\"}" > /dev/null
+CODE=$(tail -c 4000 dev.log | strings | grep -oE "OTP for [^ ]*founder[^ ]*: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$")
+curl -s -b "$JAR" -c "$JAR" -X POST $BASE/api/auth/otp/verify -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"code\":\"$CODE\"}" > /dev/null
 
 # clean slate: revoke any tokens left by a previous run (limits are 1/1 on free)
 for id in $(curl -s -b "$JAR" $BASE/api/v1/tokens | python3 -c "

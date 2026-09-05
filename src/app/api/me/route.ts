@@ -28,6 +28,8 @@ export async function GET(req: Request) {
       handle: user.handle,
       display_name: user.displayName,
       email: user.email,
+      email_verified: user.emailVerified !== null,
+      has_password: (await db.credential.findUnique({ where: { userId: user.id } })) !== null,
       tier: ent.tier,
       source: ent.source,
       window: {

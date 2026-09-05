@@ -10,6 +10,8 @@ import { Loader2, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -286,6 +288,131 @@ export function DashboardView({
           </CardContent>
         </Card>
       </div>
+
+      <SecurityCard />
+
     </div>
+  );
+}
+
+/* ── account security: verification state + password management ─────────── */
+
+function SecurityCard() {
+  const { me, refresh } = useSessionValue();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  if (!me) return null;
+
+  async function run(fn: () => Promise<string | null>) {
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const note = await fn();
+      if (note) setMsg(note);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const resend = () =>
+    run(async () => {
+      const r = await fetch('/api/auth/resend-verification', { method: 'POST' });
+      const b = await r.json();
+      if (!b.ok) { setError(b.error?.message ?? 'Could not send.'); return null; }
+      await refresh();
+      return b.data.sent
+        ? 'Verification email sent — check your inbox.'
+        : 'Your email is already verified.';
+    });
+
+  const changePw = () =>
+    run(async () => {
+      const r = await fetch('/api/auth/password/change', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ current_password: currentPw, new_password: newPw }),
+      });
+      const b = await r.json();
+      if (!b.ok) { setError(b.error?.message ?? 'Could not change the password.'); return null; }
+      setCurrentPw('');
+      setNewPw('');
+      await refresh();
+      return 'Password updated — other sessions were signed out.';
+    });
+
+  return (
+    <Card className="mt-4 border">
+      <CardHeader className="pb-3">
+        <p className="text-sm font-medium">Account security</p>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span>Email</span>
+          <span className="text-muted-foreground">{me.email ?? 'none on file'}</span>
+          {me.email && (
+            me.email_verified ? (
+              <Badge variant="outline">verified</Badge>
+            ) : (
+              <>
+                <Badge variant="outline" className="border-destructive/40 text-destructive">not verified</Badge>
+                <Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={() => void resend()}>
+                  Send verification email
+                </Button>
+              </>
+            )
+          )}
+        </div>
+
+        <Separator />
+
+        <form
+          className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy) void changePw();
+          }}
+        >
+          <div className="space-y-1">
+            <Label htmlFor="sec-current" className="text-xs">
+              {me.has_password ? 'Current password' : 'No password yet — set one (optional)'}
+            </Label>
+            <Input
+              id="sec-current"
+              type="password"
+              value={currentPw}
+              onChange={(e) => setCurrentPw(e.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="sec-new" className="text-xs">New password</Label>
+            <Input
+              id="sec-new"
+              type="password"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              minLength={10}
+              required
+              autoComplete="new-password"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={busy || newPw.length < 10}>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {me.has_password ? 'Change password' : 'Set password'}
+          </Button>
+        </form>
+
+        {msg && <p className="text-sm" role="status">{msg}</p>}
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Changing the password signs out every other session. Passwords are
+          stored as scrypt hashes — never in a readable form.
+        </p>
+      </CardContent>
+    </Card>
   );
 }

@@ -119,7 +119,7 @@ export async function preflightJont(jontId: string, args?: Record<string, unknow
 export async function dispatchServerJont(
   jontId: string,
   args: Record<string, unknown>,
-  opts: { userId: string; concurrentJobs: number; source: string; tokenId?: string },
+  opts: { userId: string; concurrentJobs: number; source: string; tokenId?: string; slotHeld?: boolean },
 ): Promise<DispatchResult> {
   const engine = getServerEngine(jontId);
 
@@ -158,8 +158,10 @@ export async function dispatchServerJont(
     return { ok: false, code: 'ARGUMENTS_INVALID', status: 422, message: 'arguments failed the manifest input schema', issues };
   }
 
-  // (3) concurrency slot
-  if (!tryAcquireSlot(opts.userId, opts.concurrentJobs)) {
+  // (3) concurrency slot — the route may have already acquired one (slot-
+  // before-quota ordering: a 429-for-slots must never have consumed a unit)
+  const heldByRoute = opts.slotHeld === true;
+  if (!heldByRoute && !tryAcquireSlot(opts.userId, opts.concurrentJobs)) {
     return {
       ok: false,
       code: 'RATE_LIMITED',
@@ -236,6 +238,6 @@ export async function dispatchServerJont(
 
     return { ok: true, result, bytesOut, ms: result.ms, stored_ref };
   } finally {
-    releaseSlot(opts.userId);
+    if (!heldByRoute) releaseSlot(opts.userId); // route-held slots are released by the route
   }
 }
