@@ -149,7 +149,12 @@ export async function issueOtp(emailRaw: string): Promise<OtpIssue | OtpRefusal>
   const mail = codeEmail(code);
   const result = await sendMail({ to: email, ...mail });
   const driver = result.driver;
-  if (result.driver === 'smtp' && !result.delivered) {
+  if (driver === 'log') {
+    // The log driver's contract: the code appears in the server log — this
+    // line is also what the acceptance sweeps (test-mcp.sh et al.) extract.
+    console.log(`[auth] OTP for ${email}: ${code} (dev log driver — expires in 10 min)`);
+  }
+  if (driver === 'smtp' && !result.delivered) {
     console.error(`[auth] OTP mail delivery failed for ${email}: ${result.error}`);
   }
 

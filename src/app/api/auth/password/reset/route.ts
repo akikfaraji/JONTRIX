@@ -55,6 +55,22 @@ export async function POST(req: Request) {
     data: { revokedAt: new Date() },
   });
 
+  // the emailed token IS ownership proof — clear the login lockout so a
+  // locked user who legitimately resets is not stuck until midnight UTC
+  const resetUser = await db.user.findUnique({ where: { id: consumed.userId } });
+  if (resetUser?.email) {
+    const email = resetUser.email;
+    await db.kvState.deleteMany({
+      where: {
+        OR: [
+          { key: { startsWith: 'pw_fail:' } },
+          { key: { startsWith: 'pw_lock:' } },
+        ],
+        AND: { key: { contains: `:${email}:` } },
+      },
+    }).catch(() => undefined);
+  }
+
   await audit({
     actorKind: 'user_session',
     actorId: consumed.userId,
