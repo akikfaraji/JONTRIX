@@ -7,6 +7,7 @@ import { verifyOtp, upsertUserByEmail, createSession, setSessionCookie } from '@
 import { ok, fail, ERR } from '@/lib/envelope';
 import { resolveEntitlement } from '@/lib/entitlements';
 import { burstCheck } from '@/lib/burst';
+import { newSignInEmail, sendMail } from '@/lib/mailer';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,18 @@ export async function POST(req: Request) {
 
   const tokens = await createSession(user.id, 'pwa', req);
   await setSessionCookie(req, tokens);
+
+  // security notification for established (verified) accounts — a brand-new
+  // user just verified this address themselves, so skip the echo in that case
+  if (user.email && user.emailVerified && user.createdAt < new Date(Date.now() - 60_000)) {
+    void sendMail({
+      to: user.email,
+      ...newSignInEmail(
+        req.headers.get('x-forwarded-for'),
+        req.headers.get('user-agent'),
+      ),
+    }).catch(() => undefined);
+  }
 
   return ok({
     user_id: user.id,

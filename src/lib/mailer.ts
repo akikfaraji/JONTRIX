@@ -157,3 +157,33 @@ export function passwordChangedEmail(): { subject: string; text: string; html: s
     ),
   };
 }
+
+export function newSignInEmail(ip: string | null, agent: string | null): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const device = agent ? agent.slice(0, 120) : 'an unknown device';
+  const where = ip ? ` from ${ip}` : '';
+  return {
+    subject: 'New sign-in to your JONTRIX account',
+    text: `A new session was started for your account${where} on ${device}. If this was not you, sign out everywhere from your dashboard and change your password.`,
+    html: shell(
+      'New sign-in',
+      `<p style="font-size:14px;line-height:1.6;margin:0 0 12px;">A new session was just started for your account.</p>
+       <p style="font-size:13px;color:#555555;line-height:1.6;margin:0 0 12px;">Device: ${device}<br>IP: ${ip ?? 'unknown'}<br>Time: ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC</p>
+       <p style="font-size:14px;line-height:1.6;margin:0;">If this was not you, open your dashboard and use "Sign out everywhere else", then change your password.</p>`,
+    ),
+  };
+}
+
+export function accountDeletedEmail(): { subject: string; text: string; html: string } {
+  return {
+    subject: 'Your JONTRIX account was deleted',
+    text: 'Your account was just deleted. Personal data was removed and all sessions and tokens were revoked. This is the last message you will receive from us.',
+    html: shell(
+      'Account deleted',
+      `<p style="font-size:14px;line-height:1.6;margin:0;">Your account was just deleted: personal data was removed, sessions and tokens were revoked. This is the last message you will receive from JONTRIX.</p>`,
+    ),
+  };
+}

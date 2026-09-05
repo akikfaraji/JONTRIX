@@ -10,6 +10,7 @@ import { burstCheck } from '@/lib/burst';
 import { isEmail, readJsonWithLimit } from '@/lib/validate';
 import { verifyPassword, equalizeTiming } from '@/lib/password';
 import { createSession, setSessionCookie } from '@/lib/auth';
+import { newSignInEmail, sendMail } from '@/lib/mailer';
 import { resolveEntitlement } from '@/lib/entitlements';
 import { utcDay } from '@/lib/utc';
 
@@ -92,6 +93,17 @@ export async function POST(req: Request) {
 
   const tokens = await createSession(user.id, 'pwa', req);
   await setSessionCookie(req, tokens);
+
+  // security notification — fire-and-safe, never blocks the sign-in
+  if (user.emailVerified) {
+    void sendMail({
+      to: email,
+      ...newSignInEmail(
+        req.headers.get('x-forwarded-for'),
+        req.headers.get('user-agent'),
+      ),
+    }).catch(() => undefined);
+  }
 
   return ok({
     user_id: user.id,

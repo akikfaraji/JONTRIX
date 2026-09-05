@@ -9,6 +9,8 @@ export const AUDIT_EVENTS = [
   'token.revoked',
   'token.rotated',
   'session.family_revoked',
+  'session.revoked_by_user',
+  'session.revoked_others',
   'consent.changed',
   'account.deleted',
   'account.created',

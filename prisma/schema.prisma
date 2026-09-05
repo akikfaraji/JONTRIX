@@ -131,6 +131,7 @@ model Session {
   refreshFamily String
   expiresAt     DateTime
   createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime?
   revokedAt     DateTime?
 
   @@index([userId])

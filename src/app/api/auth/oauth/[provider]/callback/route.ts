@@ -10,7 +10,7 @@ import { db } from '@/lib/db';
 import { PROVIDERS, isProvider, consumeState, exchangeCode } from '@/lib/oauth';
 import { createProvisionedUser, createSession, setSessionCookie } from '@/lib/auth';
 import { resolveEntitlement } from '@/lib/entitlements';
-import { welcomeEmail, sendMail } from '@/lib/mailer';
+import { welcomeEmail, newSignInEmail, sendMail } from '@/lib/mailer';
 import { audit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
@@ -76,6 +76,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     await resolveEntitlement(identity.userId).catch(() => undefined);
     const tokens = await createSession(identity.userId, 'pwa', req);
     await setSessionCookie(req, tokens);
+    if (identity.user.email && identity.user.emailVerified) {
+      void sendMail({
+        to: identity.user.email,
+        ...newSignInEmail(req.headers.get('x-forwarded-for'), req.headers.get('user-agent')),
+      }).catch(() => undefined);
+    }
     return land(req, 'signed_in', 'ok');
   }
 
@@ -105,6 +111,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     await resolveEntitlement(existing.id).catch(() => undefined);
     const tokens = await createSession(existing.id, 'pwa', req);
     await setSessionCookie(req, tokens);
+    if (existing.email) {
+      void sendMail({
+        to: existing.email,
+        ...newSignInEmail(req.headers.get('x-forwarded-for'), req.headers.get('user-agent')),
+      }).catch(() => undefined);
+    }
     return land(req, 'signed_in', 'ok');
   }
 

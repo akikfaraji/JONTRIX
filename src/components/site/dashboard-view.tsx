@@ -291,6 +291,10 @@ export function DashboardView({
 
       <SecurityCard />
 
+      <SessionsCard />
+
+      <DangerZoneCard />
+
     </div>
   );
 }
@@ -412,6 +416,234 @@ function SecurityCard() {
           Changing the password signs out every other session. Passwords are
           stored as scrypt hashes — never in a readable form.
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── active sessions: device list + remote sign-out ─────────────────────── */
+
+interface SessionRow {
+  id: string;
+  kind: string;
+  created_ip: string | null;
+  user_agent: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  current: boolean;
+}
+
+function shortDevice(row: SessionRow): string {
+  const ua = row.user_agent ?? '';
+  // tiny UA summarizer — the security view is about recognition, not forensics
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\//.test(ua) ? 'Opera'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Safari\//.test(ua) ? 'Safari'
+    : ua ? 'Unknown browser' : 'Unknown client';
+  const os = /Android/.test(ua) ? 'Android'
+    : /iPhone|iPad/.test(ua) ? 'iOS'
+    : /Windows/.test(ua) ? 'Windows'
+    : /Mac OS/.test(ua) ? 'macOS'
+    : /Linux/.test(ua) ? 'Linux' : '';
+  return [browser, os].filter(Boolean).join(' · ');
+}
+
+function shortTime(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-GB', {
+    timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  }) + ' UTC';
+}
+
+function SessionsCard() {
+  const [rows, setRows] = useState<SessionRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      const r = await fetch('/api/auth/sessions');
+      const b = await r.json();
+      if (b.ok) setRows(b.data.sessions as SessionRow[]);
+      else setError(b.error?.message ?? 'Could not load sessions.');
+    } catch {
+      setError('Network error — could not load sessions.');
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function revoke(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/auth/sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const b = await r.json();
+      if (!b.ok) setError(b.error?.message ?? 'Could not revoke.');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeOthers() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/auth/sessions/revoke-others', { method: 'POST' });
+      const b = await r.json();
+      if (!b.ok) setError(b.error?.message ?? 'Could not sign out other devices.');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const others = rows ? rows.filter((r) => !r.current).length : 0;
+
+  return (
+    <Card className="mt-4 border">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium">Active sessions</p>
+          {others > 0 && (
+            <Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={() => void revokeOthers()}>
+              Sign out everywhere else ({others})
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {rows === null && !error && <Skeleton className="h-16 w-full" />}
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        {rows && rows.length === 0 && (
+          <p className="text-sm text-muted-foreground">No active sessions.</p>
+        )}
+        {rows && rows.length > 0 && (
+          <ul className="divide-y">
+            {rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm">
+                    {shortDevice(r)}{' '}
+                    {r.current && <Badge variant="outline" className="ml-1">this device</Badge>}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.kind} · IP {r.created_ip ?? 'unknown'} · last seen {shortTime(r.last_seen_at)}
+                  </p>
+                </div>
+                {!r.current && (
+                  <Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={() => void revoke(r.id)}>
+                    Revoke
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── danger zone: self-serve account deletion ────────────────────────────── */
+
+function DangerZoneCard() {
+  const { me, refresh } = useSessionValue();
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  if (!me) return null;
+
+  async function del() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/auth/account/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password, confirm }),
+      });
+      const b = await r.json();
+      if (!b.ok) {
+        setError(b.error?.message ?? 'Could not delete the account.');
+        return;
+      }
+      await refresh();
+      window.location.href = '/';
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const needsPassword = me.has_password;
+  const canSubmit = needsPassword ? password.length > 0 : confirm === 'DELETE';
+
+  return (
+    <Card className="mt-4 border-destructive/30">
+      <CardHeader className="pb-3">
+        <p className="text-sm font-medium">Delete account</p>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {!open ? (
+          <>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Permanently delete this account: your email is removed, every
+              session and token is revoked, and usage records are kept only as
+              anonymous aggregates. This cannot be undone.
+            </p>
+            <Button size="sm" variant="outline" className="border-destructive/40 text-destructive" onClick={() => setOpen(true)}>
+              Delete my account
+            </Button>
+          </>
+        ) : (
+          <div className="space-y-3">
+            {needsPassword ? (
+              <div className="space-y-1">
+                <Label htmlFor="del-pw" className="text-xs">Confirm with your password</Label>
+                <Input
+                  id="del-pw"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label htmlFor="del-confirm" className="text-xs">Type DELETE to confirm</Label>
+                <Input
+                  id="del-confirm"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder="DELETE"
+                />
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={busy || !canSubmit}
+                onClick={() => void del()}
+              >
+                {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Delete forever
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setOpen(false); setError(null); }}>
+                Cancel
+              </Button>
+            </div>
+            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

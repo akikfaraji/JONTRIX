@@ -356,6 +356,15 @@ export async function getSessionAuth(req: Request): Promise<AuthContext | null> 
   if (valid) {
     const row = await db.session.findUnique({ where: { id: valid.sid } });
     if (!row || row.revokedAt || row.expiresAt < new Date()) return null;
+    // last-seen heartbeat, throttled to one write per minute per session —
+    // powers the "active sessions" security view without hammering SQLite.
+    void db.session.updateMany({
+      where: {
+        id: row.id,
+        OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: new Date(Date.now() - 60_000) } }],
+      },
+      data: { lastSeenAt: new Date() },
+    }).catch(() => undefined);
     return { userId: row.userId, sessionId: row.id, kind: row.kind };
   }
 
@@ -428,4 +437,90 @@ export async function revokeSession(auth: AuthContext): Promise<void> {
     data: { revokedAt: new Date() },
   }).catch(() => undefined);
   await clearSessionCookie();
+}
+
+// ── session management (account security view) ───────────────────────────
+
+export interface SessionListItem {
+  id: string;
+  kind: string;
+  created_ip: string | null;
+  user_agent: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  expires_at: string;
+  current: boolean;
+}
+
+/** Active (non-revoked, non-expired) sessions for a user, newest first. */
+export async function listActiveSessions(
+  userId: string,
+  currentSessionId: string,
+): Promise<SessionListItem[]> {
+  const rows = await db.session.findMany({
+    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    created_ip: r.createdIp,
+    user_agent: r.userAgent,
+    created_at: r.createdAt.toISOString(),
+    last_seen_at: r.lastSeenAt ? r.lastSeenAt.toISOString() : null,
+    expires_at: r.expiresAt.toISOString(),
+    current: r.id === currentSessionId,
+  }));
+}
+
+/**
+ * Revoke one session by id, scoped to the owner — returns 'not_found' when
+ * the id does not belong to this user (IDOR-safe: no existence leak across
+ * accounts, same 404 for a foreign id and a bogus id).
+ */
+export async function revokeSessionById(
+  userId: string,
+  sessionId: string,
+): Promise<'revoked' | 'not_found'> {
+  const row = await db.session.findFirst({ where: { id: sessionId, userId } });
+  if (!row || row.revokedAt) return row ? 'revoked' : 'not_found';
+  await db.session.update({ where: { id: row.id }, data: { revokedAt: new Date() } });
+  await audit({
+    actorKind: 'user_session',
+    actorId: userId,
+    event: 'session.revoked_by_user',
+    subject: row.id,
+  });
+  return 'revoked';
+}
+
+/** Revoke every active session of a user except one ("sign out everywhere else"). */
+export async function revokeOtherSessions(
+  userId: string,
+  keepSessionId: string,
+): Promise<number> {
+  const res = await db.session.updateMany({
+    where: { userId, revokedAt: null, id: { not: keepSessionId } },
+    data: { revokedAt: new Date() },
+  });
+  if (res.count > 0) {
+    await audit({
+      actorKind: 'user_session',
+      actorId: userId,
+      event: 'session.revoked_others',
+      subject: keepSessionId,
+      meta: { count: res.count },
+    });
+  }
+  return res.count;
+}
+
+/** Revoke ALL active sessions of a user (password change, account deletion). */
+export async function revokeAllSessions(userId: string): Promise<number> {
+  const res = await db.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  return res.count;
 }
