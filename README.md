@@ -12,11 +12,18 @@ is corrected.
 - Contracts: VOL-00 through VOL-16 complete. Legal review G-35 CLEARED (2026-09-03).
 - Platform: dashboard (PWA), tool runtime, MCP gateway server, Telegram bot + Boost,
   browser extension, gateway CLI, ledger and DoD tooling — built and acceptance-tested.
-- Tools: 40 of 247 Jonts have real engines today (25 server + 15 in-browser client
+- Tools: 60 of 247 Jonts have real engines today (35 server + 25 in-browser client
   engines), including the CSV/JSON data-repair core, curl-to-code, the API error
-  decoder, the merchant-feed fixer, and the deterministic quiz generator. Every
-  unbuilt card says "planned" and refuses to pretend — build batches keep promoting
-  real engines.
+  decoder, the merchant-feed fixer, the deterministic quiz generator, the Telegram
+  initData HMAC verifier, CSV reshaping (transpose/unpivot/pivot), the Excel
+  formula-injection guard, and the LLM JSON cleaner. Every unbuilt card says
+  "planned" and refuses to pretend — build batches keep promoting real engines.
+- Accounts: email+password (scrypt) with verification, reset, change; email-code
+  sign-in; Google and GitHub OAuth with verified-email-only linking; active-session
+  management with remote revoke; self-serve account deletion with full anonymization;
+  new-sign-in security alerts. Real SMTP mail via nodemailer (any free tier) with an
+  honest dev log fallback. Security headers (CSP/XFO/nosniff) on every route;
+  /api/health for uptime monitors.
 - Not yet live: npm/PyPI publication of the gateway (needs founder registry accounts),
   billing rails (Paddle/Stars are FALLBACK swap points per the decision register),
   production deployment, AI-dependent tools (need a provider key).
@@ -71,6 +78,14 @@ runs at boot (Next.js instrumentation hook) before the first request.
   30 s resend interval, 5 password attempts / account / day (cleared by an
   emailed reset — the reset link IS ownership proof), single-use reset and
   verification tokens, enumeration-safe forgot-password responses.
+- **Account controls**: dashboard lists active sessions (device, IP,
+  last-seen) with per-session revoke and "sign out everywhere else";
+  self-serve account deletion (password or typed-DELETE proof) removes the
+  email, revokes every session and token, and keeps only anonymous usage
+  aggregates; new-sign-in security alerts go to verified addresses.
+- **Ops**: security headers (CSP, X-Frame-Options, nosniff, referrer,
+  permissions policy) via middleware on every route; unauthenticated
+  `GET /api/health` reports version + database status for uptime monitors.
 
 ## Environment configuration
 
