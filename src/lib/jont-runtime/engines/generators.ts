@@ -3,7 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import type { JontEngine, JontResult } from '../types';
-import { fnv1a, seededShuffle, seededRandom } from '../util';
+import { fnv1a, seededShuffle, seededRandom, toCsv } from '../util';
 
 // ─── jont_j009_exam-question-bank-builder ──────────────────────────────────
 
@@ -544,4 +544,197 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export const GENERATOR_ENGINES = [examQuestionBankBuilder, citationFormatter, worksheetRubricGenerator, changelogFromGitLog, quizGeneratorFromNotes];
+// ─── jont_j058_spreadsheets ────────────────────────────────────────────────
+
+export const spreadsheetGenerator: JontEngine = {
+  manifest: {
+    id: 'jont_j058_spreadsheets',
+    pattern: 'generator',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['template'],
+        properties: {
+          template: { type: 'string', enum: ['inventory', 'invoice-lines', 'budget', 'attendance', 'custom'], description: 'starter spreadsheet template' },
+          columns: { type: 'string', description: 'custom: comma-separated column names' },
+          row_count: { type: 'number', description: 'sample rows to generate (1-500)' },
+          seed: { type: 'number', description: 'seed for the deterministic sample data' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: true,
+    evidence: { problem_row: 'WG-G20', score: 6.9 },
+  },
+  run(input): JontResult {
+    const template = String(input.template ?? 'inventory');
+    const count = Math.max(1, Math.min(500, Number(input.row_count ?? 10) || 10));
+    const rand = seededRandom(fnv1a(`${template}:${count}:${Number(input.seed ?? 1)}`));
+    const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
+    const money = (min: number, max: number) => String((Math.floor((min + rand() * (max - min)) * 100) / 100).toFixed(2));
+
+    let header: string[]; let sampleRow: (i: number) => string[];
+    if (template === 'inventory') {
+      header = ['sku', 'product_name', 'category', 'quantity', 'unit_price', 'reorder_level'];
+      const cats = ['electronics', 'apparel', 'home', 'office'];
+      sampleRow = (i) => [`SKU-${String(1000 + i)}`, `Sample product ${i + 1}`, pick(cats), String(5 + Math.floor(rand() * 200)), money(2, 90), '10'];
+    } else if (template === 'invoice-lines') {
+      header = ['line', 'description', 'qty', 'unit_price', 'line_total'];
+      sampleRow = (i) => {
+        const qty = 1 + Math.floor(rand() * 8);
+        const price = money(5, 120);
+        return [String(i + 1), `Service item ${i + 1}`, String(qty), price, String(Math.round(qty * Number(price) * 100) / 100)];
+      };
+    } else if (template === 'budget') {
+      header = ['month', 'category', 'planned', 'actual', 'variance'];
+      const cats = ['rent', 'food', 'transport', 'marketing', 'savings'];
+      const months = ['2026-01', '2026-02', '2026-03'];
+      sampleRow = () => {
+        const c = pick(cats); const m = pick(months);
+        const planned = Math.floor(50 + rand() * 450);
+        const actual = planned + Math.floor(-30 + rand() * 60);
+        return [m, c, String(planned), String(actual), String(planned - actual)];
+      };
+    } else if (template === 'attendance') {
+      header = ['date', 'name', 'status', 'minutes_late'];
+      const names = ['A. Rahman', 'J. Doe', 'M. Chen', 'S. Ali', 'P. Novak'];
+      const stat = ['present', 'present', 'present', 'late', 'absent'];
+      sampleRow = () => [new Date(Date.UTC(2026, 7, 1 + Math.floor(rand() * 28))).toISOString().slice(0, 10), pick(names), pick(stat), String(Math.floor(rand() * 20))];
+    } else {
+      const cols = String(input.columns ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+      if (cols.length === 0) throw new Error('NO_COLUMNS|custom template needs comma-separated column names');
+      header = cols;
+      sampleRow = (i) => cols.map((c, j) => (j === 0 ? `${c} ${i + 1}` : String(Math.floor(rand() * 100))));
+    }
+
+    const rows: Array<Array<string | number>> = [header];
+    for (let i = 0; i < count; i++) rows.push(sampleRow(i));
+    return {
+      data: {
+        csv: toCsv(rows),
+        filename: `${template}-sheet.csv`,
+        rows: count,
+        columns: header,
+        template,
+      },
+      warnings: ['sample rows are seeded synthetic data — replace with real records before use'],
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j139_static-json-mock-api-server ─────────────────────────────────
+
+export const staticJsonMockApi: JontEngine = {
+  manifest: {
+    id: 'jont_j139_static-json-mock-api-server',
+    pattern: 'generator',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['routes'],
+        properties: {
+          routes: { type: 'string', format: 'textarea', description: 'one route per line: METHOD path field:type field:type … — e.g. "GET /users name:string age:number active:boolean"' },
+          items: { type: 'number', description: 'items per collection route (1-50)' },
+          seed: { type: 'number', description: 'seed for deterministic fake values' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'MAX',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-API-fake-DV-B17', score: 6.2 },
+  },
+  run(input): JontResult {
+    const src = String(input.routes ?? '');
+    if (!src.trim()) throw new Error('NO_ROUTES|define at least one route line');
+    const items = Math.max(1, Math.min(50, Number(input.items ?? 5) || 5));
+    const seed = Number(input.seed ?? 1) || 1;
+
+    interface Route { method: string; path: string; fields: Array<{ name: string; type: string }> }
+    const routes: Route[] = [];
+    const bad: string[] = [];
+    src.split(/\r?\n/).forEach((line, i) => {
+      const t = line.trim();
+      if (!t) return;
+      const parts = t.split(/\s+/);
+      const method = parts[0]?.toUpperCase() ?? 'GET';
+      const path = parts[1] ?? '';
+      if (!/^\/[\w\-./:]*$/.test(path) || !['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        bad.push(`line ${i + 1}: "${t.slice(0, 60)}" — expected "METHOD /path field:type …"`);
+        return;
+      }
+      const fields = parts.slice(2).map((f) => {
+        const [name, type = 'string'] = f.split(':');
+        return { name, type: type.toLowerCase() };
+      });
+      routes.push({ method, path, fields });
+    });
+    if (routes.length === 0) throw new Error('NO_VALID_ROUTES|no route line parsed');
+
+    const fakeValue = (type: string, i: number, name: string, rnd: () => number): unknown => {
+      switch (type) {
+        case 'number': case 'int': return Math.floor(rnd() * 100);
+        case 'float': case 'price': return Math.round(rnd() * 10000) / 100;
+        case 'boolean': case 'bool': return rnd() > 0.5;
+        case 'date': return new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+        case 'email': return `user${i + 1}@example.test`;
+        case 'name': return ['Ada', 'Bo', 'Cy', 'Dee', 'Eli'][i % 5] + ' Sample';
+        case 'uuid': return `00000000-0000-4000-8000-${String(seed * 100000 + i).padStart(12, '0')}`;
+        default: return `${name}_${i + 1}`;
+      }
+    };
+
+    const mocks: Record<string, unknown> = {};
+    routes.forEach((r) => {
+      const rnd = seededRandom(fnv1a(`${r.method}:${r.path}:${seed}`));
+      const isCollection = !/\:(id|.*Id)/.test(r.path);
+      if (isCollection) {
+        const arr = Array.from({ length: items }, (_, i) => {
+          const obj: Record<string, unknown> = { id: i + 1 };
+          r.fields.forEach((f) => { obj[f.name] = fakeValue(f.type, i, f.name, rnd); });
+          return obj;
+        });
+        mocks[`${r.method} ${r.path}`] = arr;
+      } else {
+        const obj: Record<string, unknown> = { id: 1 };
+        r.fields.forEach((f) => { obj[f.name] = fakeValue(f.type, 0, f.name, rnd); });
+        mocks[`${r.method} ${r.path}`] = obj;
+      }
+    });
+
+    const serverJs = `// Generated by JONTRIX static-json-mock-api-server — zero dependencies.
+// Run: node mock-api.js  → serves every route below with deterministic data.
+const http = require('http');
+const routes = ${JSON.stringify(mocks, null, 2)};
+const server = http.createServer((req, res) => {
+  const key = \`\${req.method} \${req.url.split('?')[0]}\`;
+  const hit = routes[key];
+  if (!hit) { res.writeHead(404, {'content-type':'application/json'}); res.end(JSON.stringify({error:'no mock for ' + key})); return; }
+  res.writeHead(200, {'content-type':'application/json'});
+  res.end(JSON.stringify(hit, null, 2));
+});
+server.listen(process.env.PORT || 3001);
+console.log('mock API on http://localhost:' + (process.env.PORT || 3001));`;
+
+    return {
+      data: {
+        routes: routes.map((r) => `${r.method} ${r.path}`),
+        mocks,
+        server_js: serverJs,
+        filename: 'mock-api.js',
+        invalid_lines: bad,
+      },
+      warnings: [
+        ...bad.map((b) => `skipped: ${b}`),
+        'fake data is seeded synthetic — never wire this server to real users',
+      ],
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+export const GENERATOR_ENGINES = [examQuestionBankBuilder, citationFormatter, worksheetRubricGenerator, changelogFromGitLog, quizGeneratorFromNotes, spreadsheetGenerator, staticJsonMockApi];

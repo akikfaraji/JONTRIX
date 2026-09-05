@@ -520,4 +520,270 @@ export const jwtDecoderVerifier: JontEngine = {
   },
 };
 
-export const VALIDATOR_ENGINES = [corsEchoDiagnose, aiProvenanceReport, shopifyCsvPreflight, mcpConfigValidator, aiSlopTextLinter, jwtDecoderVerifier];
+// ─── jont_j014_citation-verifier ───────────────────────────────────────────
+
+export const citationVerifier: JontEngine = {
+  manifest: {
+    id: 'jont_j014_citation-verifier',
+    pattern: 'validator',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['citations'],
+        properties: {
+          citations: { type: 'array', items: { type: 'string' }, description: 'one citation per item (APA / MLA / Chicago-ish)' },
+          style: { type: 'string', enum: ['apa', 'mla', 'chicago'], description: 'house style the citations should follow' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'MAX',
+    mcp_exposed: true,
+    evidence: { problem_row: 'WG-G4', score: 7.6 },
+  },
+  run(input): JontResult {
+    const raw = Array.isArray(input.citations) ? (input.citations as unknown[]) : [];
+    const style = typeof input.style === 'string' ? input.style.toLowerCase() : 'apa';
+    const findings: Array<{ index: number; severity: 'error' | 'warning' | 'info'; message: string }> = [];
+    let checked = 0;
+
+    raw.forEach((c, i) => {
+      const cite = String(c ?? '').trim();
+      if (!cite) {
+        findings.push({ index: i, severity: 'error', message: 'empty citation' });
+        return;
+      }
+      checked += 1;
+
+      if (cite.length < 20) {
+        findings.push({ index: i, severity: 'warning', message: 'suspiciously short — a complete citation is rarely under 20 characters' });
+      }
+
+      // year: any 4-digit year 1400-2100, in parentheses for APA
+      const bareYear = /(?:1[4-9]|20)\d{2}/.exec(cite);
+      if (!bareYear) {
+        findings.push({ index: i, severity: 'error', message: 'no publication year found (expected a 4-digit year)' });
+      } else if (style === 'apa' && !/\((?:1[4-9]|20)\d{2}\)/.test(cite)) {
+        findings.push({ index: i, severity: 'warning', message: 'APA places the year in parentheses after the author: (2021)' });
+      }
+
+      // title heuristics: quotes or italics markers are not required, but a
+      // citation without any sentence-case segment after the year is suspect
+      const afterYear = bareYear ? cite.slice((cite.indexOf(bareYear[0]) ?? 0) + bareYear[0].length) : '';
+      if (afterYear.replace(/[^A-Za-z]/g, '').length < 8) {
+        findings.push({ index: i, severity: 'error', message: 'no title text after the year — the citation looks truncated' });
+      }
+
+      // author init heuristics: starts with uppercase word (surname)
+      if (!/^[A-Z][A-Za-z'’-]/.test(cite)) {
+        findings.push({ index: i, severity: 'warning', message: 'citations conventionally begin with the author surname (capitalized)' });
+      }
+
+      // URL sanity
+      const url = /https?:\/\/\S+/.exec(cite);
+      if (url) {
+        if (/\.(pdf|docx?)(\?|$)/i.test(url[0]) === false && !/https?:\/\/(dx\.)?doi\.org/.test(url[0])) {
+          findings.push({ index: i, severity: 'info', message: 'link is a bare web page — a DOI (https://doi.org/…) link is more stable for reviewers' });
+        }
+        if (/[)\]]$/.test(url[0])) {
+          findings.push({ index: i, severity: 'warning', message: 'URL swallowed a closing bracket/parenthesis — paste it again or wrap it in <>' });
+        }
+      }
+
+      // double spaces / stray separators
+      if (/ {2,}/.test(cite)) {
+        findings.push({ index: i, severity: 'info', message: 'double spaces found — run the final formatting pass' });
+      }
+      if (/,,|\.\.|;;/.test(cite)) {
+        findings.push({ index: i, severity: 'error', message: 'doubled punctuation (,, or .. or ;;) — almost always a copy glitch' });
+      }
+    });
+
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    return {
+      data: {
+        style,
+        checked,
+        clean: checked - errors,
+        error_count: errors,
+        warning_count: findings.filter((f) => f.severity === 'warning').length,
+        findings,
+      },
+      warnings: raw.length === 0 ? ['no citations supplied'] : [],
+      ms: 0,
+    };
+  },
+};
+
+// ─── jont_j060_telegram-mini-app-shell ─────────────────────────────────────
+
+export const telegramMiniAppShell: JontEngine = {
+  manifest: {
+    id: 'jont_j060_telegram-mini-app-shell',
+    pattern: 'validator',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['init_data'],
+        properties: {
+          init_data: { type: 'string', format: 'textarea', description: 'the window.Telegram.WebApp.initData string' },
+          bot_token: { type: 'string', description: 'optional bot token — when present the HMAC signature is actually verified' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'MAX',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-TG-telegram-platform', score: 6.9 },
+  },
+  run(input): JontResult {
+    const init = String(input.init_data ?? '').trim();
+    if (!init) throw new Error('NO_INIT_DATA|init_data is required');
+    const token = typeof input.bot_token === 'string' ? input.bot_token.trim() : '';
+    const findings: Array<{ severity: 'error' | 'warning' | 'info'; message: string }> = [];
+
+    const params = new URLSearchParams(init);
+    const pairs: Array<[string, string]> = [];
+    params.forEach((value, key) => pairs.push([key, value]));
+
+    const hasHash = params.has('hash');
+    const userRaw = params.get('user');
+    const authDate = params.get('auth_date');
+
+    let user: { id?: number; first_name?: string; username?: string } | null = null;
+    if (userRaw) {
+      try {
+        user = JSON.parse(userRaw) as { id?: number; first_name?: string; username?: string };
+      } catch {
+        findings.push({ severity: 'error', message: 'user field is not valid JSON' });
+      }
+    } else {
+      findings.push({ severity: 'error', message: 'no user field — the WebApp never received the identity payload' });
+    }
+
+    if (!authDate) {
+      findings.push({ severity: 'error', message: 'no auth_date — replay protection and freshness checks are impossible' });
+    } else {
+      const ts = Number(authDate) * 1000;
+      if (!Number.isFinite(ts)) {
+        findings.push({ severity: 'error', message: 'auth_date is not a unix timestamp' });
+      } else {
+        const ageH = (Date.now() - ts) / 3_600_000;
+        if (ageH > 24) findings.push({ severity: 'warning', message: `initData is ${Math.round(ageH)}h old — production checks should reject anything older than 24h` });
+        if (ageH < -1) findings.push({ severity: 'warning', message: 'auth_date is in the future — clock skew or forgery' });
+      }
+    }
+
+    let signature_verified: boolean | null = null;
+    if (hasHash && token) {
+      // Telegram WebApp signature: secret = HMAC_SHA256(key="WebAppData", msg=bot_token);
+      // hash = HMAC_SHA256(key=secret, msg=data_check_string)
+      const dataCheckString = pairs
+        .filter(([k]) => k !== 'hash')
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([k, v]) => `${k}=${v}`)
+        .join('\n');
+      const secret = createHmac('sha256', 'WebAppData').update(token).digest();
+      const calc = createHmac('sha256', secret).update(dataCheckString).digest('hex');
+      const provided = (params.get('hash') ?? '').toLowerCase();
+      const a = Buffer.from(calc, 'hex');
+      const b = Buffer.from(provided, 'hex');
+      signature_verified = a.length === b.length && timingSafeEqual(a, b);
+      if (!signature_verified) {
+        findings.push({ severity: 'error', message: 'HMAC signature MISMATCH for this bot token — the data was not produced by your bot (or was tampered with)' });
+      }
+    } else if (!hasHash) {
+      findings.push({ severity: 'error', message: 'no hash field — the payload cannot be authenticated at all' });
+    } else {
+      findings.push({ severity: 'info', message: 'bot_token not supplied — structural checks only; supply it to verify the HMAC signature' });
+    }
+
+    if (user && typeof user.id !== 'number') {
+      findings.push({ severity: 'warning', message: 'user.id is missing or not numeric' });
+    }
+
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    return {
+      data: {
+        verdict: errors > 0 ? 'invalid' : signature_verified === false ? 'signature-mismatch' : signature_verified === true ? 'verified' : 'structurally-valid',
+        user: user ? { id: user.id ?? null, name: user.first_name ?? null, username: user.username ?? null } : null,
+        auth_date: authDate,
+        signature_verified,
+        findings,
+      },
+      warnings: [],
+      ms: 0,
+    };
+  },
+};
+
+// ─── jont_j171_ai-code-review-linter ───────────────────────────────────────
+
+export const aiCodeReviewLinter: JontEngine = {
+  manifest: {
+    id: 'jont_j171_ai-code-review-linter',
+    pattern: 'validator',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['code'],
+        properties: {
+          code: { type: 'string', format: 'textarea', description: 'source to lint (JS/TS/Python rules applied where they match)' },
+          max_line_length: { type: 'number', description: 'line-length budget (default 120)' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-EDU-ai-WG-G7', score: 6.0 },
+  },
+  run(input): JontResult {
+    const src = String(input.code ?? '');
+    if (!src.trim()) throw new Error('CODE_EMPTY|no code supplied');
+    const budget = Math.max(40, Math.min(400, Number(input.max_line_length ?? 120) || 120));
+    const findings: Array<{ line: number; rule: string; severity: 'error' | 'warning' | 'info'; message: string }> = [];
+    const lines = src.split(/\r?\n/);
+
+    const isPython = /^\s*def\s+\w+|^\s*import\s+\w+|:\s*$/m.test(src) && !/;\s*$/m.test(src.replace(/["'`][^"'`]*["'`]/g, ''));
+    const isJs = /\b(const|let|var|function|=>)\b/.test(src);
+
+    lines.forEach((line, idx) => {
+      const n = idx + 1;
+      if (line.length > budget) findings.push({ line: n, rule: 'max-len', severity: 'info', message: `line is ${line.length} chars (budget ${budget})` });
+      if (/[ \t]+$/.test(line)) findings.push({ line: n, rule: 'no-trailing-whitespace', severity: 'info', message: 'trailing whitespace' });
+      if (/\t/.test(line) && isJs) findings.push({ line: n, rule: 'no-tabs', severity: 'info', message: 'tab character in JS/TS source — spaces keep diffs consistent' });
+
+      if (/TODO|FIXME|HACK|XXX/.test(line)) findings.push({ line: n, rule: 'no-open-todos', severity: 'warning', message: 'open TODO/FIXME marker left in the change' });
+      if (!isPython && /console\.log\(/.test(line)) findings.push({ line: n, rule: 'no-console', severity: 'warning', message: 'console.log left in source' });
+      if (isPython && /(^|\s)print\(/.test(line) && !/def print/.test(line)) findings.push({ line: n, rule: 'no-print', severity: 'warning', message: 'bare print() — use logging in production paths' });
+      if (/\bvar\s+\w+\s*=/.test(line)) findings.push({ line: n, rule: 'no-var', severity: 'warning', message: 'var declaration — prefer const/let' });
+      if (/[^=!<>]==[^=]/.test(line)) findings.push({ line: n, rule: 'eqeqeq', severity: 'warning', message: 'loose == comparison — use === to avoid coercion bugs' });
+      if (/eval\(|new Function\(/.test(line)) findings.push({ line: n, rule: 'no-eval', severity: 'error', message: 'eval/new Function — arbitrary code execution risk' });
+      if (/innerHTML\s*=/.test(line) && !/textContent/.test(line)) findings.push({ line: n, rule: 'no-raw-innerhtml', severity: 'warning', message: 'innerHTML assignment — XSS sink unless the content is sanitized' });
+      if (/(api[_-]?key|secret|password|token)\s*[:=]\s*['"][A-Za-z0-9_\-]{12,}['"]/i.test(line)) findings.push({ line: n, rule: 'no-hardcoded-secrets', severity: 'error', message: 'possible hardcoded secret in source' });
+      if (/catch\s*\(\s*\w*\s*\)\s*\{\s*\}/.test(line)) findings.push({ line: n, rule: 'no-empty-catch', severity: 'warning', message: 'empty catch block swallows failures silently' });
+    });
+
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    const warnings = findings.filter((f) => f.severity === 'warning').length;
+    return {
+      data: {
+        language_guess: isPython ? 'python' : isJs ? 'js/ts' : 'text',
+        lines: lines.length,
+        error_count: errors,
+        warning_count: warnings,
+        info_count: findings.length - errors - warnings,
+        verdict: errors > 0 ? 'needs-changes' : warnings > 0 ? 'review-recommended' : 'clean',
+        findings: findings.slice(0, 200),
+      },
+      warnings: findings.length > 200 ? ['findings truncated at 200'] : [],
+      ms: 0,
+    };
+  },
+};
+
+export const VALIDATOR_ENGINES = [corsEchoDiagnose, aiProvenanceReport, shopifyCsvPreflight, mcpConfigValidator, aiSlopTextLinter, jwtDecoderVerifier, citationVerifier, telegramMiniAppShell, aiCodeReviewLinter];

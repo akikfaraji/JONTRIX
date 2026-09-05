@@ -784,6 +784,246 @@ function show(d: string): string {
   return d === '\t' ? 'tab' : d === '|' ? 'pipe' : `"${d}"`;
 }
 
+// ─── jont_j012_big-json-splitter-viewer ────────────────────────────────────
+// Splits a big JSON array into N valid-JSON chunk files, entirely in-browser.
+
+const bigJsonSplitter: JontEngine = {
+  manifest: {
+    id: 'jont_j012_big-json-splitter-viewer',
+    pattern: 'converter',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          json: { type: 'string', format: 'textarea', description: 'a JSON array (the splitter never uploads it)' },
+          chunks: { type: 'number', description: 'number of output files (2-100)' },
+          base_name: { type: 'string', description: 'output filename base (default "chunk")' },
+        },
+        required: ['json'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: false,
+    evidence: { problem_row: 'DR-B2', score: 7.62 },
+  },
+  run(input) {
+    const started = Date.now();
+    const src = String(input.json ?? '');
+    if (!src.trim()) throw new Error('JSON_BOX_EMPTY|paste the JSON array first');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(src);
+    } catch {
+      throw new Error('BAD_JSON|not valid JSON — run the LLM JSON Cleaner first if an AI produced this');
+    }
+    if (!Array.isArray(parsed)) throw new Error('NOT_ARRAY|the splitter needs a top-level JSON array — wrap the object in [ ] or export an array');
+
+    const n = Math.max(2, Math.min(100, Number(input.chunks ?? 4) || 4));
+    if (n > parsed.length) throw new Error(`TOO_MANY_CHUNKS|${n} chunks requested but the array only has ${parsed.length} items`);
+    const base = String(input.base_name ?? 'chunk').replace(/[^\w.-]/g, '') || 'chunk';
+
+    const per = Math.ceil(parsed.length / n);
+    const parts: Array<{ filename: string; content: string; rows: number }> = [];
+    for (let i = 0; i < n; i++) {
+      const slice = parsed.slice(i * per, (i + 1) * per);
+      if (slice.length === 0) continue;
+      parts.push({ filename: `${base}-${String(i + 1).padStart(2, '0')}-of-${String(n).padStart(2, '0')}.json`, content: JSON.stringify(slice, null, 2), rows: slice.length });
+    }
+
+    return {
+      data: {
+        output: JSON.stringify({ parts: parts.length, items: parsed.length, per_chunk: per }),
+        parts,
+        items: parsed.length,
+        chunks: parts.length,
+      },
+      warnings: parts.length !== n ? [`${n} chunks requested but items only filled ${parts.length}`] : [],
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j017_big-json-viewer-query ───────────────────────────────────────
+// Dot-path query with [n] indexes and [*] spreads + optional numeric/string
+// filter — a readable subset, no full JSONPath.
+
+const bigJsonQuery: JontEngine = {
+  manifest: {
+    id: 'jont_j017_big-json-viewer-query',
+    pattern: 'converter',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          json: { type: 'string', format: 'textarea', description: 'the JSON document to query' },
+          path: { type: 'string', description: 'dot path, e.g. "items[*].price" or "users[0].email" — default "$"' },
+          filter: { type: 'string', description: 'optional filter like "price>10" or "status=paid" applied to result objects' },
+        },
+        required: ['json', 'path'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: false,
+    evidence: { problem_row: 'DV-B1', score: 7.58 },
+  },
+  run(input) {
+    const started = Date.now();
+    const src = String(input.json ?? '');
+    if (!src.trim()) throw new Error('JSON_BOX_EMPTY|paste the JSON document first');
+    let doc: unknown;
+    try {
+      doc = JSON.parse(src);
+    } catch {
+      throw new Error('BAD_JSON|not valid JSON');
+    }
+
+    const path = String(input.path ?? '$').trim();
+    const segments = path.replace(/^\$\.?/, '').split('.').filter(Boolean);
+
+    let current: unknown[] = [doc];
+    for (const seg of segments) {
+      const next: unknown[] = [];
+      for (const node of current) {
+        const m = /^([\w-]+|\*)(?:\[(\d+|\*)\])?$/.exec(seg);
+        if (!m) throw new Error(`BAD_SEGMENT|cannot parse path segment "${seg}" — use name, name[2], name[*]`);
+        const [, key, idx] = m;
+        let targets: unknown;
+        if (key === '*') {
+          targets = node;
+        } else if (node !== null && typeof node === 'object') {
+          targets = (node as Record<string, unknown>)[key];
+        }
+        if (idx === '*' && Array.isArray(targets)) next.push(...targets);
+        else if (idx !== undefined && Array.isArray(targets)) {
+          const i = Number(idx);
+          if (i < targets.length) next.push(targets[i]);
+        } else if (targets !== undefined) next.push(targets);
+      }
+      current = next;
+      if (current.length === 0) break;
+    }
+
+    // optional filter on object results
+    const filterRaw = String(input.filter ?? '').trim();
+    let filtered = current;
+    let dropped = 0;
+    if (filterRaw) {
+      const fm = /^([\w-]+)\s*(>=|<=|!=|>|<|=)\s*(.+)$/.exec(filterRaw);
+      if (!fm) throw new Error('BAD_FILTER|filters look like "price>10", "status=paid", "name!=x"');
+      const [, fkey, opRaw, fvalRaw] = fm;
+      const fval = fvalRaw.trim().replace(/^["']|["']$/g, '');
+      const fnum = Number(fval);
+      const op = opRaw === '=' ? '==' : opRaw;
+      filtered = current.filter((node) => {
+        const v = node !== null && typeof node === 'object' ? (node as Record<string, unknown>)[fkey] : undefined;
+        if (v === undefined) return false;
+        if (!Number.isNaN(fnum) && typeof v === 'number') {
+          switch (op) { case '==': return v === fnum; case '!=': return v !== fnum; case '>': return v > fnum; case '<': return v < fnum; case '>=': return v >= fnum; case '<=': return v <= fnum; }
+        }
+        const a = String(v); const b = fval;
+        switch (op) { case '==': return a === b; case '!=': return a !== b; case '>': return a > b; case '<': return a < b; case '>=': return a >= b; case '<=': return a <= b; }
+        return false;
+      });
+      dropped = current.length - filtered.length;
+    }
+
+    return {
+      data: {
+        output: JSON.stringify(filtered, null, 2),
+        matches: filtered.length,
+        dropped_by_filter: dropped,
+        filename: 'query-result.json',
+      },
+      warnings: current.length === 0 ? ['path matched nothing — check segment names'] : [],
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j042_csv-encoding-converter ──────────────────────────────────────
+// Bytes in (base64) → decoded with the source charset → re-encoded UTF-8.
+// The whole decode/encode happens locally; nothing is uploaded.
+
+const csvEncodingConverter: JontEngine = {
+  manifest: {
+    id: 'jont_j042_csv-encoding-converter',
+    pattern: 'converter',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          bytes_base64: { type: 'string', description: 'the file bytes, base64-encoded (read locally in the browser)' },
+          text: { type: 'string', format: 'textarea', description: '…or paste text directly (treated as already-decoded)' },
+          from_encoding: { type: 'string', enum: ['utf-8', 'windows-1252', 'iso-8859-1'], description: 'charset of the base64 bytes' },
+          bom: { type: 'boolean', description: 'add a UTF-8 BOM so Excel opens it as UTF-8' },
+          line_endings: { type: 'string', enum: ['lf', 'crlf'], description: 'normalize line endings (default crlf for Excel)' },
+        },
+        required: [],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: false,
+    evidence: { problem_row: 'GT-CSV-convert-DR-A2', score: 7.15 },
+  },
+  run(input) {
+    const started = Date.now();
+    const warnings: string[] = [];
+    let text = String(input.text ?? '');
+    const b64 = String(input.bytes_base64 ?? '').trim();
+
+    if (b64) {
+      const enc = typeof input.from_encoding === 'string' ? input.from_encoding : 'utf-8';
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(atob(b64.replace(/\s+/g, '')), (c) => c.charCodeAt(0));
+      } catch {
+        throw new Error('BAD_BASE64|could not decode the base64 payload');
+      }
+      // replacement chars are the honest signal of a wrong source charset
+      text = new TextDecoder(enc, { fatal: false }).decode(bytes);
+      const badChars = (text.match(/\uFFFD/g) ?? []).length;
+      if (badChars > 0) {
+        warnings.push(`${badChars} undecodable byte sequence(s) with ${enc} — try the other source encoding; mojibake means the declared charset does not match the file`);
+      }
+      if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf && enc !== 'utf-8') {
+        warnings.push('the file already carries a UTF-8 BOM — it was probably UTF-8 all along');
+      }
+    } else if (!text.trim()) {
+      throw new Error('NO_INPUT|paste text or provide bytes_base64');
+    }
+
+    const le = input.line_endings === 'lf' ? 'lf' : 'crlf';
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (le === 'crlf') text = text.replace(/\n/g, '\r\n');
+
+    const utf8Bytes = new TextEncoder().encode(text);
+    const bom = input.bom === true;
+    const finalBytes = bom ? new Uint8Array([0xef, 0xbb, 0xbf, ...utf8Bytes]) : utf8Bytes;
+    let bin = '';
+    finalBytes.forEach((b) => { bin += String.fromCharCode(b); });
+    const outB64 = btoa(bin);
+
+    return {
+      data: {
+        output: text,
+        utf8_base64: outB64,
+        filename: bom ? 'converted-utf8-bom.csv' : 'converted-utf8.csv',
+        bytes: finalBytes.length,
+        bom,
+        line_endings: le,
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
 export const CLIENT_CONVERTER_ENGINES: JontEngine[] = [
   csvToJson,
   jsonToCsvFlatten,
@@ -793,4 +1033,7 @@ export const CLIENT_CONVERTER_ENGINES: JontEngine[] = [
   sqlDialectMigrator,
   csvSplitter,
   csvMerger,
+  bigJsonSplitter,
+  bigJsonQuery,
+  csvEncodingConverter,
 ];

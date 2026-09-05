@@ -1093,4 +1093,425 @@ function stableJoin(items: string[]): string {
   return [...items].sort().join('\u0000');
 }
 
-export const CONVERTER_ENGINES = [studyDeckConverter, weddingGuestListPlanner, flashcardDataPortability, chatgptExportConverter, seatingChartsRandomGroupMaker, sqlQueryExplainer, naturalLanguageToCron, curlToCode, apiErrorDecoder, telegramExportAnalyzer, leagueScheduler];
+// ─── jont_j053_amazon-flat-file-pre-flight ─────────────────────────────────
+
+export const amazonFlatFilePreflight: JontEngine = {
+  manifest: {
+    id: 'jont_j053_amazon-flat-file-pre-flight',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['csv'],
+        properties: {
+          csv: { type: 'string', format: 'textarea', description: 'pasted Amazon flat-file (tab or comma delimited) — header row plus products' },
+          category: { type: 'string', description: 'free-text category note, echoed into the report' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-MKT-amazon-EC-C9', score: 7.0 },
+  },
+  run(input): JontResult {
+    const src = String(input.csv ?? '');
+    if (!src.trim()) throw new Error('CSV_EMPTY|paste the flat file contents first');
+    const tabCount = (src.match(/\t/g) ?? []).length;
+    const delimiter = tabCount > (src.match(/,/g) ?? []).length ? '\t' : ',';
+    const rows = parseCsv(src, delimiter);
+    if (rows.length < 2) throw new Error('NO_DATA_ROWS|header row found but no product rows beneath it');
+
+    // Amazon flat-file template columns every category template carries
+    const REQUIRED = ['sku', 'product-name', 'item-price', 'quantity', 'main-image-url', 'standard-price', 'feed_product_type'];
+    const header = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-'));
+    const norm = (name: string) => name.toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-');
+    const missing = REQUIRED.filter((r) => !header.includes(norm(r)));
+
+    const findings: Array<{ severity: 'error' | 'warning' | 'info'; row?: number; message: string }> = [];
+    if (missing.length > 0) {
+      findings.push({ severity: 'error', message: `missing required template columns: ${missing.join(', ')}` });
+    }
+    // duplicate SKUs
+    const skuIdx = header.findIndex((h) => norm(h) === 'sku');
+    if (skuIdx >= 0) {
+      const seen = new Map<string, number>();
+      rows.slice(1).forEach((r, i) => {
+        const sku = (r[skuIdx] ?? '').trim();
+        if (!sku) findings.push({ severity: 'error', row: i + 2, message: 'empty SKU — Amazon rejects the whole row' });
+        else if (seen.has(sku)) findings.push({ severity: 'error', row: i + 2, message: `duplicate SKU "${sku}" (first seen row ${seen.get(sku)})` });
+        else seen.set(sku, i + 2);
+      });
+    } else {
+      findings.push({ severity: 'error', message: 'no sku column at all — the file cannot be matched to inventory' });
+    }
+    // price sanity
+    const priceIdx = header.findIndex((h) => h === 'item-price' || h === 'standard-price');
+    if (priceIdx >= 0) {
+      rows.slice(1).forEach((r, i) => {
+        const p = (r[priceIdx] ?? '').trim();
+        if (p && !/^\d+([.,]\d{1,2})?$/.test(p)) findings.push({ severity: 'warning', row: i + 2, message: `price "${p}" is not a plain number — currency symbols break the feed` });
+        if (p === '0' || p === '0.00') findings.push({ severity: 'error', row: i + 2, message: 'zero price — Amazon suppresses listings priced 0' });
+      });
+    }
+    // image URL sanity
+    const imgIdx = header.findIndex((h) => h.includes('main-image-url') || h === 'main-image-url');
+    if (imgIdx >= 0) {
+      rows.slice(1).forEach((r, i) => {
+        const u = (r[imgIdx] ?? '').trim();
+        if (u && !/^https?:\/\//i.test(u)) findings.push({ severity: 'error', row: i + 2, message: `image URL "${u.slice(0, 40)}" does not start with http(s)://` });
+        if (u && u.length > 500) findings.push({ severity: 'warning', row: i + 2, message: 'image URL longer than 500 chars — feed parser truncates it' });
+      });
+    }
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    return {
+      data: {
+        delimiter: delimiter === '\t' ? 'tab' : delimiter,
+        columns: header.length,
+        product_rows: rows.length - 1,
+        category: String(input.category ?? ''),
+        missing_required: missing,
+        error_count: errors,
+        warning_count: findings.filter((f) => f.severity === 'warning').length,
+        verdict: errors > 0 || missing.length > 0 ? 'not-ready' : 'ready',
+        findings: findings.slice(0, 300),
+      },
+      warnings: findings.length > 300 ? ['findings truncated at 300'] : [],
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j063_gig-driver-expense-tracker ──────────────────────────────────
+
+export const gigDriverExpenseTracker: JontEngine = {
+  manifest: {
+    id: 'jont_j063_gig-driver-expense-tracker',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['expenses'],
+        properties: {
+          expenses: { type: 'string', format: 'textarea', description: 'one expense per line: date, category, amount — e.g. "2026-08-14, fuel, 32.50"' },
+          currency: { type: 'string', description: 'currency code for the report header (default USD)' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: true,
+    evidence: { problem_row: 'WG-G10', score: 6.85 },
+  },
+  run(input): JontResult {
+    const src = String(input.expenses ?? '');
+    if (!src.trim()) throw new Error('NO_EXPENSES|paste at least one expense line');
+    const currency = String(input.currency ?? 'USD').toUpperCase().slice(0, 4);
+    const byCategory = new Map<string, number>();
+    const byMonth = new Map<string, number>();
+    const bad: string[] = [];
+    let count = 0;
+    let total = 0;
+
+    src.split(/\r?\n/).forEach((line) => {
+      const t = line.trim();
+      if (!t) return;
+      const parts = t.split(/[,;\t]/).map((p) => p.trim());
+      if (parts.length < 3) {
+        bad.push(`"${t.slice(0, 60)}" — expected date, category, amount`);
+        return;
+      }
+      const [date, category, amountRaw] = parts;
+      const amount = Number(amountRaw.replace(/[^0-9.\-]/g, ''));
+      if (!Number.isFinite(amount)) {
+        bad.push(`"${t.slice(0, 60)}" — amount "${amountRaw}" is not a number`);
+        return;
+      }
+      const month = /^\d{4}-\d{2}/.exec(date)?.[0] ?? 'unknown';
+      count += 1;
+      total += amount;
+      byCategory.set(category, (byCategory.get(category) ?? 0) + amount);
+      byMonth.set(month, (byMonth.get(month) ?? 0) + amount);
+    });
+
+    if (count === 0) throw new Error('NO_VALID_ROWS|no line parsed as date, category, amount');
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const categoryRows = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => ({ category: c, total: round2(v) }));
+    const monthRows = [...byMonth.entries()].sort().map(([m, v]) => ({ month: m, total: round2(v) }));
+    const rows = [['category', `total (${currency})`], ...categoryRows.map((r) => [r.category, String(r.total)])];
+    return {
+      data: {
+        expense_count: count,
+        total: round2(total),
+        average: round2(total / count),
+        currency,
+        by_category: categoryRows,
+        by_month: monthRows,
+        csv: toCsv(rows),
+        unparsed: bad,
+      },
+      warnings: bad.length > 0 ? [`${bad.length} line(s) could not be parsed — see unparsed`] : [],
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j076_landlord-rent-ledgers ───────────────────────────────────────
+
+export const landlordRentLedgers: JontEngine = {
+  manifest: {
+    id: 'jont_j076_landlord-rent-ledgers',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['payments'],
+        properties: {
+          payments: { type: 'string', format: 'textarea', description: 'one payment per line: tenant, month (YYYY-MM), paid amount. Rent expected goes in the rent field.' },
+          rent: { type: 'number', description: 'expected monthly rent per tenant' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'MAX',
+    mcp_exposed: true,
+    evidence: { problem_row: 'WG-G9', score: 6.73 },
+  },
+  run(input): JontResult {
+    const src = String(input.payments ?? '');
+    if (!src.trim()) throw new Error('NO_PAYMENTS|paste at least one payment line');
+    const rent = Number(input.rent ?? 0);
+    if (!Number.isFinite(rent) || rent <= 0) throw new Error('NO_RENT|set the expected monthly rent first');
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    interface Ledger { tenant: string; paid: number; months: Map<string, number>; arrears: number; credit: number }
+    const ledgers = new Map<string, Ledger>();
+    const bad: string[] = [];
+    let rowCount = 0;
+
+    src.split(/\r?\n/).forEach((line) => {
+      const t = line.trim();
+      if (!t) return;
+      const parts = t.split(/[,;\t]/).map((p) => p.trim());
+      if (parts.length < 3) {
+        bad.push(`"${t.slice(0, 60)}" — expected tenant, month, amount`);
+        return;
+      }
+      const [tenant, month, amountRaw] = parts;
+      const amount = Number(amountRaw.replace(/[^0-9.\-]/g, ''));
+      if (!Number.isFinite(amount)) {
+        bad.push(`"${t.slice(0, 60)}" — amount "${amountRaw}" is not a number`);
+        return;
+      }
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        bad.push(`"${t.slice(0, 60)}" — month "${month}" is not YYYY-MM`);
+        return;
+      }
+      rowCount += 1;
+      const led = ledgers.get(tenant) ?? { tenant, paid: 0, months: new Map<string, number>(), arrears: 0, credit: 0 };
+      led.paid += amount;
+      led.months.set(month, (led.months.get(month) ?? 0) + amount);
+      ledgers.set(tenant, led);
+    });
+
+    if (rowCount === 0) throw new Error('NO_VALID_ROWS|no payment line parsed');
+
+    const tenants = [...ledgers.values()].map((led) => {
+      const monthsPaid = led.months.size;
+      const expected = monthsPaid * rent;
+      const balance = round2(led.paid - expected);
+      return {
+        tenant: led.tenant,
+        months: monthsPaid,
+        paid: round2(led.paid),
+        expected: round2(expected),
+        balance, // negative = arrears, positive = credit
+        status: balance < -0.005 ? 'arrears' : balance > 0.005 ? 'credit' : 'settled',
+        per_month: [...led.months.entries()].sort().map(([m, v]) => ({ month: m, paid: round2(v) })),
+      };
+    }).sort((a, b) => a.balance - b.balance);
+
+    const totalArrears = round2(tenants.reduce((s, t) => s + Math.min(0, t.balance), 0));
+    const csvRows: Array<Array<string | number>> = [['tenant', 'months', 'paid', 'expected', 'balance', 'status']];
+    tenants.forEach((t) => csvRows.push([t.tenant, t.months, t.paid, t.expected, t.balance, t.status]));
+    return {
+      data: {
+        rent,
+        tenants,
+        total_arrears: totalArrears,
+        payment_rows: rowCount,
+        csv: toCsv(csvRows),
+        unparsed: bad,
+      },
+      warnings: bad.length > 0 ? [`${bad.length} line(s) could not be parsed — see unparsed`] : [],
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j124_spreadsheet (CSV reshaper: transpose / unpivot / pivot) ─────
+
+export const spreadsheetReshaper: JontEngine = {
+  manifest: {
+    id: 'jont_j124_spreadsheet',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['csv', 'operation'],
+        properties: {
+          csv: { type: 'string', format: 'textarea', description: 'the table to reshape' },
+          operation: { type: 'string', enum: ['transpose', 'unpivot', 'pivot'], description: 'transpose swaps rows/columns; unpivot melts wide→long; pivot aggregates long→wide by row/col key' },
+          key_column: { type: 'string', description: 'pivot/unpivot: the fixed identifier column name' },
+          value_columns: { type: 'string', description: 'unpivot: comma-separated columns to melt (default: all except key). pivot: the column holding values' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: true,
+    evidence: { problem_row: 'EC-C31', score: 6.28 },
+  },
+  run(input): JontResult {
+    const src = String(input.csv ?? '');
+    if (!src.trim()) throw new Error('CSV_EMPTY|paste the table first');
+    const op = String(input.operation ?? 'transpose');
+    const rows = parseCsv(src);
+    if (rows.length < 2) throw new Error('TOO_SMALL|need a header row plus at least one data row');
+    const header = rows[0];
+    const body = rows.slice(1);
+    const change_log: Array<{ at: string; from?: string; to?: string; note?: string }> = [];
+    let out: string[][];
+
+    if (op === 'transpose') {
+      const width = Math.max(...rows.map((r) => r.length));
+      out = Array.from({ length: width }, (_, c) => rows.map((r) => r[c] ?? ''));
+      change_log.push({ at: new Date().toISOString(), note: `transposed ${rows.length}x${width} → ${width}x${rows.length}` });
+    } else if (op === 'unpivot') {
+      const keyIdx = input.key_column ? header.indexOf(String(input.key_column)) : 0;
+      if (keyIdx < 0) throw new Error('KEY_NOT_FOUND|key_column not found in the header row');
+      const meltNames = String(input.value_columns ?? '')
+        .split(',').map((s) => s.trim()).filter(Boolean);
+      const meltIdx = meltNames.length > 0
+        ? meltNames.map((n) => header.indexOf(n)).filter((i) => i >= 0)
+        : header.map((_, i) => i).filter((i) => i !== keyIdx);
+      if (meltIdx.length === 0) throw new Error('NO_MELT_COLUMNS|no value columns resolved');
+      out = [[header[keyIdx], 'metric', 'value']];
+      body.forEach((r) => meltIdx.forEach((mi) => out.push([r[keyIdx] ?? '', header[mi], r[mi] ?? ''])));
+      change_log.push({ at: new Date().toISOString(), note: `unpivoted ${meltIdx.length} columns into metric/value rows` });
+    } else {
+      // pivot: key_column rows × metric columns from (key, metric, value) long table
+      const keyIdx = input.key_column ? header.indexOf(String(input.key_column)) : 0;
+      if (keyIdx < 0) throw new Error('COLUMN_NOT_FOUND|key_column not found in header');
+      const metricIdx = header.map((_, i) => i).filter((i) => i !== keyIdx);
+      const map = new Map<string, Map<string, string>>();
+      const metrics: string[] = [];
+      body.forEach((r) => {
+        const k = r[keyIdx] ?? '';
+        metricIdx.forEach((mi) => {
+          const metric = header[mi];
+          if (!metrics.includes(metric)) metrics.push(metric);
+          if (!map.has(k)) map.set(k, new Map());
+          // last value wins (spreadsheet semantics)
+          map.get(k)!.set(metric, r[mi] ?? '');
+        });
+      });
+      out = [[String(input.key_column) || 'key', ...metrics]];
+      [...map.keys()].forEach((k) => out.push([k, ...metrics.map((m) => map.get(k)!.get(m) ?? '')]));
+      change_log.push({ at: new Date().toISOString(), note: `pivoted ${body.length} long rows into ${map.size} keys × ${metrics.length} metrics` });
+    }
+
+    return {
+      data: {
+        output: toCsv(out),
+        rows: out.length,
+        columns: out[0]?.length ?? 0,
+        filename: `reshaped-${op}.csv`,
+      },
+      warnings: [],
+      change_log,
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j153_webhook-replay-tool ─────────────────────────────────────────
+
+export const webhookReplayTool: JontEngine = {
+  manifest: {
+    id: 'jont_j153_webhook-replay-tool',
+    pattern: 'converter',
+    context: 'server',
+    io: {
+      input: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: { type: 'string', description: 'the endpoint the webhook should hit' },
+          method: { type: 'string', enum: ['POST', 'PUT', 'PATCH'], description: 'HTTP method (default POST)' },
+          payload: { type: 'string', format: 'textarea', description: 'captured JSON body to replay' },
+          headers: { type: 'string', format: 'textarea', description: 'JSON object of headers to send (e.g. captured signature header)' },
+          count: { type: 'number', description: 'how many replay requests the artifact should fire (1-20)' },
+        },
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'MAX',
+    mcp_exposed: true,
+    evidence: { problem_row: 'GT-API-replay-DV-B7', score: 6.1 },
+  },
+  run(input): JontResult {
+    const url = String(input.url ?? '').trim();
+    if (!/^https?:\/\/[\w.-]+/.test(url)) throw new Error('BAD_URL|give the full http(s) endpoint URL');
+    let body = String(input.payload ?? '').trim();
+    if (body) {
+      try {
+        JSON.parse(body);
+      } catch {
+        throw new Error('BAD_JSON|payload is not valid JSON — fix it before replaying');
+      }
+    }
+    let headers: Record<string, string> = {};
+    const hdrRaw = String(input.headers ?? '').trim();
+    if (hdrRaw) {
+      try {
+        const parsed = JSON.parse(hdrRaw) as Record<string, unknown>;
+        headers = Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k.toLowerCase(), String(v)]));
+      } catch {
+        throw new Error('BAD_HEADERS|headers must be a JSON object of string values');
+      }
+    }
+    const method = ['PUT', 'PATCH'].includes(String(input.method)) ? String(input.method) : 'POST';
+    const count = Math.max(1, Math.min(20, Number(input.count ?? 1) || 1));
+    if (!Object.keys(headers).some((h) => h === 'content-type')) headers['content-type'] = 'application/json';
+
+    const headerLines = Object.entries(headers).map(([k, v]) => `  -H '${k}: ${v.replace(/'/g, `'\\''`)}'`).join(' \\\n');
+    const curl = `curl -X ${method} '${url}' \\\n${headerLines}${body ? ` \\\n  -d '${body.replace(/'/g, `'\\''`)}'` : ''}`;
+    const loop = `for i in $(seq 1 ${count}); do\n  ${curl.replace(/^/gm, '  ').trim()} \\\n    ; echo "replay $i done"\ndone`;
+    const fetchCode = `await fetch('${url}', {\n  method: '${method}',\n  headers: ${JSON.stringify(headers, null, 2)},\n  body: ${body ? `JSON.stringify(${body})` : 'undefined'},\n});`;
+
+    return {
+      data: {
+        method,
+        url,
+        count,
+        curl,
+        curl_loop: loop,
+        fetch: fetchCode,
+        header_names: Object.keys(headers),
+        body_bytes: Buffer.byteLength(body),
+      },
+      warnings: [
+        ...(count > 5 ? ['replaying more than 5 times can trip upstream idempotency checks'] : []),
+        ...(Object.keys(headers).some((h) => h.includes('signature')) ? ['captured signature headers usually include a timestamp — most receivers reject stale signatures, so expect 401/400 on replay'] : []),
+      ],
+      ms: 0,
+    } satisfies JontResult;
+  },
+};
+
+export const CONVERTER_ENGINES = [studyDeckConverter, weddingGuestListPlanner, flashcardDataPortability, chatgptExportConverter, seatingChartsRandomGroupMaker, sqlQueryExplainer, naturalLanguageToCron, curlToCode, apiErrorDecoder, telegramExportAnalyzer, leagueScheduler, amazonFlatFilePreflight, gigDriverExpenseTracker, landlordRentLedgers, spreadsheetReshaper, webhookReplayTool];

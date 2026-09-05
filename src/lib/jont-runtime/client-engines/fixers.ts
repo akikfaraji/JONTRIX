@@ -242,8 +242,261 @@ const subtitleSyncOffsetFixer: JontEngine = {
   },
 };
 
+// ─── jont_j006_csv-column-split-repair ─────────────────────────────────────
+// One column holds several fields glued together ("City, ZIP" / "name|dept").
+// Splits it into real columns — locally, with a full change log.
+
+const csvColumnSplitRepair: JontEngine = {
+  manifest: {
+    id: 'jont_j006_csv-column-split-repair',
+    pattern: 'fixer',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          csv: { type: 'string', format: 'textarea', description: 'CSV with a merged column — fixed locally' },
+          column: { type: 'string', description: 'name of the column to split' },
+          separator: { type: 'string', description: 'the glue between fields, e.g. ", " or " - " or "|"' },
+          new_names: { type: 'string', description: 'comma-separated names for the new columns (default: column_1, column_2, …)' },
+        },
+        required: ['csv', 'column'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: false,
+    evidence: { problem_row: 'DR-A2', score: 7.55 },
+  },
+  run(input) {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const src = String(input.csv ?? '');
+    if (!src.trim()) throw new Error('CSV_BOX_EMPTY|the CSV box is empty');
+    const det = detectDelimiter(src);
+    const rows = parseCsv(src, det.delimiter);
+    if (rows.length < 2) throw new Error('NO_ROWS|need a header row plus data rows');
+
+    const colName = String(input.column ?? '').trim();
+    const header = rows[0];
+    const idx = header.findIndex((h) => h.trim().toLowerCase() === colName.toLowerCase());
+    if (!colName) throw new Error('NO_COLUMN|name the column to split');
+    if (idx < 0) throw new Error(`COLUMN_NOT_FOUND|"${colName}" is not in the header — available: ${header.slice(0, 8).join(', ')}${header.length > 8 ? '…' : ''}`);
+
+    const sep = String(input.separator ?? ', ');
+    if (!sep) throw new Error('NO_SEPARATOR|give the separator that glues the fields (e.g. ", ")');
+
+    const splitParts = (cell: string): string[] => cell.split(sep).map((p) => p.trim());
+    // probe how many parts the column really carries
+    let width = 0;
+    rows.slice(1).forEach((r) => {
+      width = Math.max(width, splitParts(r[idx] ?? '').length);
+    });
+    if (width < 2) {
+      throw new Error(`NOTHING_TO_SPLIT|no cell in "${colName}" contains the separator "${sep}" — check the glue text`);
+    }
+    if (width > 12) throw new Error(`TOO_WIDE|splitting yields ${width} columns — that looks wrong; check the separator`);
+
+    const names = String(input.new_names ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const newCols: string[] = [];
+    for (let i = 0; i < width; i++) newCols.push(names[i] ?? `${colName}_${i + 1}`);
+
+    const out: string[][] = [];
+    out.push([...header.slice(0, idx), ...newCols, ...header.slice(idx + 1)]);
+    let uneven = 0;
+    rows.slice(1).forEach((r) => {
+      const parts = splitParts(r[idx] ?? '');
+      while (parts.length < width) parts.push('');
+      if (splitParts(r[idx] ?? '').length !== width) uneven += 1;
+      out.push([...r.slice(0, idx), ...parts, ...r.slice(idx + 1)]);
+    });
+
+    const change_log = [{
+      at: new Date().toISOString(),
+      from: colName,
+      to: newCols.join(', '),
+      note: `split ${rows.length - 1} cells on "${sep}" into ${width} columns`,
+    }];
+    if (uneven > 0) warnings.push(`${uneven} row(s) had a different field count — empties were padded; spot-check them`);
+    if (newCols.some((n) => header.includes(n))) warnings.push('a new column name collides with an existing header name — rename to avoid ambiguity');
+
+    return {
+      data: { output: toDelimited(out, det.delimiter), filename: 'column-split.csv', rows: out.length - 1, new_columns: newCols },
+      warnings,
+      change_log,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j032_excel-import-guard ──────────────────────────────────────────
+// Neutralizes spreadsheet formula injection (=, +, -, @, TAB, CR prefixes)
+// before a CSV is opened in Excel/Sheets — the classic CSV injection fix.
+
+const excelImportGuard: JontEngine = {
+  manifest: {
+    id: 'jont_j032_excel-import-guard',
+    pattern: 'fixer',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          csv: { type: 'string', format: 'textarea', description: 'CSV that will be opened in Excel/Sheets — sanitized locally' },
+          strategy: { type: 'string', enum: ['prefix-quote', 'space'], description: 'prefix-quote prepends an apostrophe; space prepends a space (default prefix-quote)' },
+        },
+        required: ['csv'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: false,
+    evidence: { problem_row: 'DR-A1', score: 7.33 },
+  },
+  run(input) {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const src = String(input.csv ?? '');
+    if (!src.trim()) throw new Error('CSV_BOX_EMPTY|the CSV box is empty');
+    const strategy = input.strategy === 'space' ? 'space' : 'prefix-quote';
+    const guard = (cell: string): string => {
+      const c = cell ?? '';
+      if (/^[=+\-@\t\r]/.test(c)) {
+        const prefix = strategy === 'space' ? ' ' : "'";
+        return prefix + c;
+      }
+      return c;
+    };
+
+    const det = detectDelimiter(src);
+    const rows = parseCsv(src, det.delimiter);
+    let changed = 0;
+    const change_log: Array<{ at: string; from?: string; to?: string; note?: string }> = [];
+    const out = rows.map((row, ri) =>
+      row.map((cell, ci) => {
+        const fixed = guard(cell);
+        if (fixed !== cell) {
+          changed += 1;
+          if (change_log.length < 25) change_log.push({ at: new Date().toISOString(), from: cell.slice(0, 30), to: fixed.slice(0, 30), note: `row ${ri + 1} col ${ci + 1} neutralized` });
+        }
+        return fixed;
+      }),
+    );
+
+    if (changed === 0) warnings.push('no formula-looking cells found — nothing to guard (file is already safe)');
+    else change_log.unshift({ at: new Date().toISOString(), note: `${changed} cell(s) started with = + - @ or TAB and were neutralized with the "${strategy}" strategy` });
+
+    return {
+      data: { output: toDelimited(out, det.delimiter), filename: 'excel-guarded.csv', rows: out.length - 1, cells_neutralized: changed },
+      warnings,
+      change_log,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j035_llm-json-cleaner ────────────────────────────────────────────
+// Repairs the five classic ways LLM output breaks JSON.parse: markdown
+// fences, prose around the object, trailing commas, smart quotes, comments.
+
+const llmJsonCleaner: JontEngine = {
+  manifest: {
+    id: 'jont_j035_llm-json-cleaner',
+    pattern: 'fixer',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', format: 'textarea', description: 'the AI answer that should contain JSON — cleaned locally' },
+        },
+        required: ['text'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: false,
+    evidence: { problem_row: 'DR-B1', score: 7.25 },
+  },
+  run(input) {
+    const started = Date.now();
+    const warnings: string[] = [];
+    let src = String(input.text ?? '');
+    if (!src.trim()) throw new Error('TEXT_BOX_EMPTY|paste the AI output first');
+    const notes: string[] = [];
+
+    // 1. markdown fences
+    const fenced = /```(?:json)?\s*\n([\s\S]*?)\n```/i.exec(src);
+    if (fenced) {
+      src = fenced[1];
+      notes.push('stripped markdown fence');
+    }
+
+    // 2. prose around the payload — take the outermost {...} or [...]
+    const braceStart = src.indexOf('{');
+    const bracketStart = src.indexOf('[');
+    const start = braceStart === -1 ? bracketStart : bracketStart === -1 ? braceStart : Math.min(braceStart, bracketStart);
+    if (start > 0) {
+      src = src.slice(start);
+      notes.push('cut prose before the JSON payload');
+    }
+    const endBrace = Math.max(src.lastIndexOf('}'), src.lastIndexOf(']'));
+    if (endBrace !== -1 && endBrace < src.length - 1) {
+      src = src.slice(0, endBrace + 1);
+      notes.push('cut prose after the JSON payload');
+    }
+
+    // 3. smart quotes
+    if (/[""]/.test(src)) {
+      src = src.replace(/[""]/g, '"').replace(/['']/g, "'");
+      notes.push('replaced smart quotes with straight quotes');
+    }
+
+    // 4. // and /* */ comments (outside strings — cheap heuristic: line-comment at line start or after whitespace)
+    if (/(^|\s)\/\/|\/\*/.test(src)) {
+      src = src.replace(/"(?:[^"\\]|\\.)*"|\/\/[^\n\r]*|\/\*[\s\S]*?\*\//g, (m) => (m.startsWith('"') ? m : ''));
+      notes.push('removed // and /* */ comments');
+    }
+
+    // 5. trailing commas
+    if (/,\s*([}\]])/.test(src)) {
+      src = src.replace(/,(\s*[}\]])/g, '$1');
+      notes.push('removed trailing commas');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(src);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      throw new Error(`STILL_BROKEN|automated repair failed (${msg}) — the damage is beyond fences/commas/quotes; the original text is unchanged`);
+    }
+
+    if (notes.length === 0) warnings.push('input already parsed clean — no repairs were needed');
+    const change_log = notes.map((note) => ({ at: new Date().toISOString(), note }));
+
+    return {
+      data: {
+        output: JSON.stringify(parsed, null, 2),
+        filename: 'clean.json',
+        repairs: notes,
+        type: Array.isArray(parsed) ? 'array' : typeof parsed === 'object' && parsed !== null ? 'object' : 'scalar',
+      },
+      warnings,
+      change_log,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
 export const CLIENT_FIXER_ENGINES: JontEngine[] = [
   csvDelimiterFixer,
   csvCleaner,
   subtitleSyncOffsetFixer,
+  csvColumnSplitRepair,
+  excelImportGuard,
+  llmJsonCleaner,
 ];

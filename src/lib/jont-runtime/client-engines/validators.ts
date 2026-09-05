@@ -384,9 +384,363 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter);
 }
 
+// ─── jont_j021_shopify-csv-preflight ───────────────────────────────────────
+// Product-CSV structure check before the Shopify import button is pressed.
+
+const shopifyCsvPreflightCheck: JontEngine = {
+  manifest: {
+    id: 'jont_j021_shopify-csv-preflight',
+    pattern: 'validator',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          csv: { type: 'string', format: 'textarea', description: 'product CSV for Shopify import — inspected locally' },
+        },
+        required: ['csv'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: false,
+    evidence: { problem_row: 'EC-C3', score: 7.53 },
+  },
+  run(input) {
+    const started = Date.now();
+    const findings: Array<{ severity: 'error' | 'warning' | 'info'; row?: number; message: string }> = [];
+    const src = String(input.csv ?? '');
+    if (!src.trim()) throw new Error('CSV_BOX_EMPTY|the CSV box is empty');
+    const det = detectDelimiter(src);
+    const rows = parseCsv(src, det.delimiter);
+    if (rows.length < 2) throw new Error('NO_ROWS|header row plus at least one product row required');
+
+    const header = rows[0].map((h) => h.trim());
+    const lower = header.map((h) => h.toLowerCase());
+    const REQUIRED = ['handle', 'title'];
+    const RECOMMENDED = ['variant price', 'vendor', 'body (html)', 'image src'];
+    REQUIRED.forEach((r) => { if (!lower.includes(r)) findings.push({ severity: 'error', message: `missing required column "${r}" — Shopify import fails without it` }); });
+    RECOMMENDED.forEach((r) => { if (!lower.includes(r)) findings.push({ severity: 'warning', message: `recommended column "${r}" absent — products will import thin` }); });
+
+    const handleIdx = lower.indexOf('handle');
+    if (handleIdx >= 0) {
+      const seen = new Map<string, number>();
+      rows.slice(1).forEach((r, i) => {
+        const h = (r[handleIdx] ?? '').trim();
+        if (!h) { findings.push({ severity: 'error', row: i + 2, message: 'empty Handle — every row must repeat the product handle' }); return; }
+        if (seen.has(h)) return; // multi-row variants are legal — repeats expected
+        seen.set(h, i + 2);
+        if (/\s/.test(h)) findings.push({ severity: 'warning', row: i + 2, message: `handle "${h}" contains spaces — Shopify rewrites handles to lowercase-hyphen; pre-normalize to keep URLs stable` });
+      });
+    }
+
+    const priceIdx = lower.findIndex((h) => h.includes('variant price') || h === 'price');
+    if (priceIdx >= 0) {
+      rows.slice(1).forEach((r, i) => {
+        const p = (r[priceIdx] ?? '').trim();
+        if (p && !/^\d+([.,]\d{1,2})?$/.test(p)) findings.push({ severity: 'warning', row: i + 2, message: `price "${p}" is not a plain number — strip currency symbols` });
+        if (p === '0') findings.push({ severity: 'info', row: i + 2, message: `row ${i + 2}: zero price — deliberate?` });
+      });
+    }
+
+    const imgIdx = lower.findIndex((h) => h.includes('image src'));
+    if (imgIdx >= 0) {
+      rows.slice(1).forEach((r, i) => {
+        const u = (r[imgIdx] ?? '').trim();
+        if (u && !/^https?:\/\//i.test(u)) findings.push({ severity: 'error', row: i + 2, message: 'image URL must be absolute http(s) — relative paths import as broken' });
+      });
+    }
+
+    // delimiter honesty: Shopify exports are comma-CSV
+    if (det.delimiter !== ',') findings.push({ severity: 'error', message: `file looks ${det.delimiter === '\t' ? 'tab' : `"${det.delimiter}"`}-delimited — Shopify import expects comma-CSV` });
+
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    return {
+      data: {
+        products: handleIdx >= 0 ? new Set(rows.slice(1).map((r) => (r[handleIdx] ?? '').trim()).filter(Boolean)).size : null,
+        rows: rows.length - 1,
+        error_count: errors,
+        warning_count: findings.filter((f) => f.severity === 'warning').length,
+        verdict: errors > 0 ? 'not-ready' : 'ready',
+        findings: findings.slice(0, 300),
+      },
+      warnings: findings.length > 300 ? ['findings truncated at 300'] : [],
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j025_file-safety-scanner ─────────────────────────────────────────
+// Signature scan of pasted text / base64 bytes for the dangerous patterns
+// office files and scripts carry. Honest scope: pattern evidence, NOT antivirus.
+
+const fileSafetyScanner: JontEngine = {
+  manifest: {
+    id: 'jont_j025_file-safety-scanner',
+    pattern: 'validator',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', format: 'textarea', description: 'pasted file content, XML/HTML source, or base64 of the raw file — scanned locally' },
+          is_base64: { type: 'boolean', description: 'set true when content is base64 of the raw file' },
+        },
+        required: ['content'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'FREE',
+    mcp_exposed: false,
+    evidence: { problem_row: 'DR-D1', score: 7.4 },
+  },
+  run(input) {
+    const started = Date.now();
+    const warnings: string[] = [];
+    let text = String(input.content ?? '');
+    if (!text.trim()) throw new Error('CONTENT_EMPTY|paste content to scan');
+    if (input.is_base64 === true) {
+      try {
+        text = atob(text.replace(/\s+/g, ''));
+      } catch {
+        throw new Error('BAD_BASE64|not valid base64');
+      }
+    }
+
+    const SIGS: Array<{ name: string; re: RegExp; severity: 'error' | 'warning' | 'info'; note: string }> = [
+      { name: 'macro-project', re: /vbaProject\.bin|vbaproject/i, severity: 'error', note: 'embedded VBA project — the classic Office macro carrier' },
+      { name: 'auto-exec-macro', re: /Auto_?Open|Document_?Open|Workbook_?Open|Auto_?Close/i, severity: 'error', note: 'auto-executing macro hook — code runs on file open' },
+      { name: 'shell-invoke', re: /Shell\s*\(|WScript\.Shell|CreateObject\(["'](WScript|Shell)/i, severity: 'error', note: 'shell/process invocation from a document context' },
+      { name: 'powershell-dropper', re: /powershell(\.exe)?\s+(-enc|-ep\s+bypass|IEX|Invoke-Expression)/i, severity: 'error', note: 'PowerShell download/execute pattern' },
+      { name: 'remote-template', re: /remote[_\s]?template|subdoc/i, severity: 'warning', note: 'remote template reference — content pulled from outside the file' },
+      { name: 'external-link', re: /http:\\?\/\\?\/[\w.-]+\/(setup|install|update|load)/i, severity: 'warning', note: 'URL that looks like a dropper endpoint' },
+      { name: 'active-content', re: /<script[\s>]/i, severity: 'warning', note: 'inline script in markup' },
+      { name: 'dde-payload', re: /DDE\s*\(|msword.*DDE/i, severity: 'error', note: 'DDE execution trick seen in phishing docs' },
+      { name: 'exe-magic', re: /MZ[\x00-\x1f]{2}/, severity: 'warning', note: 'Windows PE header fragment — an executable may be embedded' },
+      { name: 'zip-magic-office', re: /PK\x03\x04/, severity: 'info', note: 'zip container (modern Office/JAR/APK family) — contents inspected as text where possible' },
+    ];
+
+    const hits: Array<{ signature: string; severity: string; note: string; count: number }> = [];
+    SIGS.forEach((sig) => {
+      const count = (text.match(new RegExp(sig.re.source, sig.re.flags.includes('g') ? sig.re.flags : sig.re.flags + 'g')) ?? []).length;
+      if (count > 0) hits.push({ signature: sig.name, severity: sig.severity, note: sig.note, count });
+    });
+
+    const errors = hits.filter((h) => h.severity === 'error').length;
+    const verdict = errors > 0 ? 'dangerous' : hits.length > 0 ? 'suspicious' : 'no-signatures';
+    if (verdict !== 'dangerous') warnings.push('scan is signature-based: clean does NOT prove safety — treat unexpected files with caution and scan with real AV too');
+
+    return {
+      data: {
+        verdict,
+        scanned_chars: text.length,
+        hits,
+        error_signatures: errors,
+        warning_signatures: hits.length - errors,
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j028_universal-csv-pre-flight-validator ──────────────────────────
+// Structural CSV checks any upload folder should run before accepting a file.
+
+const universalCsvPreflight: JontEngine = {
+  manifest: {
+    id: 'jont_j028_universal-csv-pre-flight-validator',
+    pattern: 'validator',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          csv: { type: 'string', format: 'textarea', description: 'the CSV to validate — parsed locally' },
+          delimiter: { type: 'string', description: 'force a delimiter; default auto-detects , ; tab |' },
+        },
+        required: ['csv'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: false,
+    evidence: { problem_row: 'GT-CSV-csv-DR-A1-2', score: 7.4 },
+  },
+  run(input) {
+    const started = Date.now();
+    const findings: Array<{ severity: 'error' | 'warning' | 'info'; row?: number; message: string }> = [];
+    const src = String(input.csv ?? '');
+    if (!src.trim()) throw new Error('CSV_BOX_EMPTY|the CSV box is empty');
+
+    let bom = false;
+    let body = src;
+    if (body.charCodeAt(0) === 0xfeff) {
+      bom = true;
+      body = body.slice(1);
+      findings.push({ severity: 'info', message: 'UTF-8 BOM present — harmless for Excel, breaks naive parsers that key on the first header name' });
+    }
+
+    const det = input.delimiter ? { delimiter: String(input.delimiter), consistency: 1 } : detectDelimiter(body);
+    if (det.consistency < 0.9) {
+      findings.push({ severity: 'warning', message: `field counts vary between lines (consistency ${(det.consistency * 100).toFixed(0)}%) — ragged rows follow` });
+    }
+    const rows = parseCsv(body, det.delimiter);
+    if (rows.length === 0) throw new Error('NO_ROWS|no rows detected');
+
+    const header = rows[0];
+    header.forEach((h, i) => {
+      const name = h.trim();
+      if (!name) findings.push({ severity: 'error', message: `header column ${i + 1} is empty — downstream mappers key on names` });
+      else if (name !== h) findings.push({ severity: 'info', message: `header "${name}" carries padding whitespace` });
+      else if (/[\r\n]/.test(name)) findings.push({ severity: 'error', message: `header "${name.slice(0, 20)}" contains a line break` });
+    });
+    const seen = new Map<string, number>();
+    header.forEach((h, i) => {
+      const n = h.trim().toLowerCase();
+      if (seen.has(n)) findings.push({ severity: 'error', message: `duplicate header "${h.trim()}" (columns ${seen.get(n)! + 1} and ${i + 1})` });
+      else seen.set(n, i);
+    });
+
+    rows.slice(1).forEach((r, i) => {
+      const rowNo = i + 2;
+      if (r.length !== header.length) {
+        findings.push({ severity: 'warning', row: rowNo, message: `row ${rowNo} has ${r.length} fields, header has ${header.length}` });
+      }
+      if (r.every((c) => !c.trim())) findings.push({ severity: 'info', row: rowNo, message: `row ${rowNo} is completely empty` });
+    });
+
+    // quoting problems the CSV parser had to absorb
+    const rawLines = body.split(/\r?\n/).filter((l) => l.trim() !== '');
+    const oddQuotes = rawLines.filter((l) => (l.match(/"/g) ?? []).length % 2 === 1).length;
+    if (oddQuotes > 0) findings.push({ severity: 'error', row: 1, message: `${oddQuotes} line(s) carry an odd number of quote characters — an unclosed quote will swallow following rows on strict parsers` });
+
+    const errors = findings.filter((f) => f.severity === 'error').length;
+    return {
+      data: {
+        delimiter: det.delimiter === '\t' ? 'tab' : det.delimiter,
+        delimiter_consistency: det.consistency,
+        rows: rows.length - 1,
+        columns: header.length,
+        bom,
+        error_count: errors,
+        warning_count: findings.filter((f) => f.severity === 'warning').length,
+        verdict: errors > 0 ? 'not-ready' : det.consistency < 0.9 ? 'review' : 'ready',
+        findings: findings.slice(0, 300),
+      },
+      warnings: findings.length > 300 ? ['findings truncated at 300'] : [],
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
+// ─── jont_j019_whatsapp-order-parser (extractor) ───────────────────────────
+// Turns free-text WhatsApp order messages into structured order objects —
+// quantity × item lines, phone numbers, totals. Deterministic regex passes.
+
+const whatsappOrderParser: JontEngine = {
+  manifest: {
+    id: 'jont_j019_whatsapp-order-parser',
+    pattern: 'extractor',
+    context: 'client',
+    io: {
+      input: {
+        type: 'object',
+        properties: {
+          messages: { type: 'string', format: 'textarea', description: 'paste one or more WhatsApp order messages — parsed locally, never uploaded' },
+          price_hints: { type: 'string', description: 'optional "item=price" pairs, comma-separated, used to compute totals (e.g. "shirt=1200, mug=350")' },
+        },
+        required: ['messages'],
+      },
+      output: { type: 'object' },
+    },
+    tier_fit: 'PRO',
+    mcp_exposed: false,
+    evidence: { problem_row: 'EC-C29', score: 7.55 },
+  },
+  run(input) {
+    const started = Date.now();
+    const warnings: string[] = [];
+    const src = String(input.messages ?? '');
+    if (!src.trim()) throw new Error('MESSAGES_EMPTY|paste the order messages first');
+
+    const hints = new Map<string, number>();
+    String(input.price_hints ?? '')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .forEach((p) => {
+        const [item, price] = p.split('=').map((s) => s.trim().toLowerCase());
+        const n = Number((price ?? '').replace(/[^0-9.]/g, ''));
+        if (item && Number.isFinite(n) && n > 0) hints.set(item, n);
+      });
+
+    const blocks = src.split(/\n\s*\n/).filter((b) => b.trim().length > 0);
+    const orders = blocks.map((block, bi) => {
+      const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const nameMatch = /^(?:name|customer)\s*[:\-]\s*(.+)$/im.exec(block)?.[1]?.trim();
+      const firstLooksLikeName = /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(lines[0] ?? '');
+      const name = nameMatch ?? (firstLooksLikeName ? lines[0] : null);
+      const phone = (/(\+?\d[\d\s-]{7,15}\d)/.exec(block)?.[1] ?? null)?.replace(/[\s-]/g, '');
+      const items: Array<{ qty: number; item: string }> = [];
+      lines.forEach((l) => {
+        // "2 x shirt", "2x shirt", "shirt x 2", "shirt - 2", "2 shirt"
+        const m1 = /^(\d{1,3})\s*[x×*]\s*(.+)$/i.exec(l);
+        const m2 = /^(.+?)\s*[x×]\s*(\d{1,3})$/i.exec(l);
+        const m3 = /^(.+?)\s*[-–:]\s*(\d{1,3})$/i.exec(l);
+        const m4 = /^(\d{1,3})\s+(.+)$/.exec(l);
+        const m = m1 ?? m2 ?? m3 ?? m4;
+        if (m) {
+          const qty = Number((m1 ?? m4)?.[1] ?? m2?.[2] ?? m3?.[2]);
+          const item = ((m1 ?? m4)?.[2] ?? m2?.[1] ?? m3?.[1] ?? '').trim();
+          if (Number.isFinite(qty) && qty > 0 && item && !/^(name|customer|address|phone|tel|total)\b/i.test(item)) {
+            items.push({ qty, item: item.replace(/^[-:]\s*/, '') });
+          }
+        }
+      });
+      const total = items.reduce((s, it) => {
+        const price = hints.get(it.item.toLowerCase()) ?? hints.get(it.item.toLowerCase().replace(/s$/, ''));
+        return price ? s + price * it.qty : s;
+      }, 0);
+      const known = items.every((it) => hints.has(it.item.toLowerCase()) || hints.has(it.item.toLowerCase().replace(/s$/, '')));
+      return {
+        order_index: bi + 1,
+        name,
+        phone,
+        items,
+        item_count: items.reduce((s, i) => s + i.qty, 0),
+        total: total > 0 ? total : null,
+        total_known: known && items.length > 0,
+      };
+    });
+
+    const withItems = orders.filter((o) => o.items.length > 0).length;
+    if (withItems === 0) warnings.push('no "qty x item" lines recognized — expected formats: "2 x shirt", "shirt x 2", "2 shirt"');
+    if (orders.some((o) => !o.total_known && o.items.length > 0)) warnings.push('some totals are unknown — supply price_hints ("item=price") to compute them');
+    if (orders.some((o) => !o.phone)) warnings.push('at least one order has no phone number');
+
+    return {
+      data: {
+        orders,
+        orders_parsed: orders.length,
+        orders_with_items: withItems,
+        total_value: orders.reduce((s, o) => s + (o.total ?? 0), 0) || null,
+        json: JSON.stringify(orders, null, 2),
+        filename: 'orders.json',
+      },
+      warnings,
+      ms: Date.now() - started,
+    } satisfies JontResult;
+  },
+};
+
 export const CLIENT_VALIDATOR_ENGINES: JontEngine[] = [
   jsonFormatterValidator,
   jsonDiffChecker,
   leadingZeroDateGuard,
   duplicateRowFinder,
+  shopifyCsvPreflightCheck,
+  fileSafetyScanner,
+  universalCsvPreflight,
+  whatsappOrderParser,
 ];
