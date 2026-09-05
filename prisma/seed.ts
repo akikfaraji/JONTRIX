@@ -27,7 +27,10 @@ interface SeedRow {
   faq: [string, string][];
 }
 
-async function main() {
+// Seed entry — also callable from the runtime bootstrap guard
+// (src/lib/bootstrap.ts): importable without side effects, self-runs only
+// when executed directly via npm run db:seed.
+export async function runSeed() {
   // Plans — upsert so re-seeds never duplicate.
   for (const p of PLANS_SEED) {
     await db.plan.upsert({
@@ -127,10 +130,13 @@ async function main() {
   console.log(`meta.version = ${VERSION}`);
 }
 
-main()
-  .then(() => db.$disconnect())
-  .catch(async (e) => {
-    console.error(e);
-    await db.$disconnect();
-    process.exit(1);
-  });
+const invokedDirectly = process.argv[1]?.replace(/\\/g, '/').endsWith('seed.ts');
+if (invokedDirectly) {
+  runSeed()
+    .then(() => db.$disconnect())
+    .catch(async (e) => {
+      console.error(e);
+      await db.$disconnect();
+      process.exit(1);
+    });
+}

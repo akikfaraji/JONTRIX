@@ -54,6 +54,7 @@ model User {
   handle            String    @unique
   displayName       String?
   email             String?   @unique
+  emailVerified     DateTime?
   telegramUserId    String?   @unique
   aiTrainingConsent String    @default("denied") // granted | denied (D-05)
   consentVersion    Int       @default(0)
@@ -65,16 +66,20 @@ model User {
 
   entitlement    Entitlement?
   authIdentities AuthIdentity[]
+  credential     Credential?
+  authTokens     AuthToken[]
 
   @@index([status])
 }
 
-// VOL-04 §3 `auth_identities` — Telegram / email identity links.
+// VOL-04 §3 `auth_identities` — identity links (telegram | email | password |
+// google | github). One row per (provider, provider-uid); the password row is
+// the marker that a credential exists for the account.
 model AuthIdentity {
   id          String   @id @default(cuid())
   userId      String
-  provider    String // telegram | email
-  providerUid String // telegram id or normalized email
+  provider    String // telegram | email | password | google | github
+  providerUid String // telegram id, normalized email, or provider account id
   metaJson    String?
   createdAt   DateTime @default(now())
 
@@ -82,6 +87,35 @@ model AuthIdentity {
 
   @@unique([provider, providerUid])
   @@index([userId])
+}
+
+// Password credential — scrypt hash only, never a plaintext or a reversible
+// form (VOL-04 §1.4). One per user; created by /api/auth/register, rotated by
+// password reset/change.
+model Credential {
+  userId       String   @id
+  passwordHash String // scrypt: N$r$p$salt$hash (base64url parts)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// One-time auth tokens (email verification, password reset) — SHA-256 at
+// rest, single-use (usedAt), purpose-keyed, TTL enforced on read AND by a
+// hourly purge in dev-poll. Replay of a used token refuses honestly.
+model AuthToken {
+  id        String    @id @default(cuid())
+  userId    String
+  purpose   String // email_verify | password_reset
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, purpose])
 }
 
 // VOL-04 §3 `sessions` — browser sessions (pwa | miniapp | dashboard).

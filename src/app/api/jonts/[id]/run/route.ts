@@ -7,22 +7,15 @@
 import { getSessionAuth } from '@/lib/auth';
 import { authenticateBearer } from '@/lib/bearer';
 import { ok, fail, ERR } from '@/lib/envelope';
-import { checkAndIncrement, resolveEntitlement } from '@/lib/entitlements';
+import { checkAndIncrement, refundCounter, resolveEntitlement } from '@/lib/entitlements';
 import { dispatchServerJont, preflightJont } from '@/lib/jont-runtime/dispatch';
 import { getBuiltJontIds } from '@/lib/jont-runtime/engines';
 import { db } from '@/lib/db';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
-// Registry rows for built engines are stamped 'built' lazily on first run
-// after a deploy (the seed does it too; this is the deploy-safe path).
-async function syncBuiltStatuses(): Promise<void> {
-  const built = getBuiltJontIds();
-  await db.jont.updateMany({
-    where: { id: { in: built }, status: { not: 'built' } },
-    data: { status: 'built' },
-  });
-}
+const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB — mirrors max_upload_mb free tier
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -54,13 +47,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     source = 'api_v1';
   }
 
-  // body: { arguments: {...} }
-  let body: { arguments?: Record<string, unknown> };
+  // Registry statuses sync BEFORE the preflight — a freshly deployed engine
+  // whose row still says 'planned' must never false-503 (stale status is a
+  // deploy race, not a tool property).
   try {
-    body = (await req.json()) as typeof body;
+    await db.jont.updateMany({
+      where: { id: { in: getBuiltJontIds() }, status: { not: 'built' } },
+      data: { status: 'built' },
+    });
   } catch {
-    return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
+    // non-fatal: preflight still reads the row as-is
   }
+
+  // body: { arguments: {...} } — size-capped (2 MB) before parsing
+  const parsed = await readJsonWithLimit(req, MAX_BODY_BYTES);
+  if (!parsed.ok) {
+    return parsed.tooLarge
+      ? fail(413, 'PAYLOAD_TOO_LARGE', `request body exceeds the ${MAX_BODY_BYTES / (1024 * 1024)} MB limit`)
+      : fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
+  }
+  const body = parsed.body as { arguments?: Record<string, unknown> };
   const args = body.arguments ?? {};
 
   // Registry + argument preflight BEFORE quota — refusals (planned,
@@ -86,7 +92,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const ent = await resolveEntitlement(userId);
-  await syncBuiltStatuses();
 
   const outcome = await dispatchServerJont(id, args, {
     userId,
@@ -96,6 +101,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
 
   if (!outcome.ok) {
+    // server-fault honesty: a crashed or timed-out engine refunds the unit —
+    // the user did not get a result, so the call must not cost one.
+    if (outcome.code === 'TOOL_FAILED' || (outcome.code === 'TOOL_UNAVAILABLE' && outcome.status === 503)) {
+      await refundCounter(userId, 'srv').catch(() => undefined);
+    }
     switch (outcome.code) {
       case 'CLIENT_CONTEXT':
         // honest refusal, named as such (T11.5)

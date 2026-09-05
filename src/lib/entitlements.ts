@@ -258,6 +258,29 @@ export async function checkAndIncrement(
   return result;
 }
 
+/**
+ * Refund one unit of a counter window (server-fault honesty): when an engine
+ * crashes or times out after the quota was consumed, the user did not get a
+ * result and the call must not cost one. Never drops below zero and only
+ * touches the CURRENT window key — stale-window refunds are no-ops.
+ */
+export async function refundCounter(userId: string, kind: CounterKind): Promise<void> {
+  await db.$transaction(async (tx) => {
+    const row = await tx.entitlement.findUnique({ where: { userId } });
+    if (!row) return;
+    const counters = JSON.parse(row.countersJson || '{}') as Record<string, number>;
+    const monthly = kind === 'mcp' || kind === 'ai';
+    const key = counterKey(kind, monthly);
+    const used = counters[key] ?? 0;
+    if (used <= 0) return;
+    counters[key] = used - 1;
+    await tx.entitlement.update({
+      where: { userId },
+      data: { countersJson: JSON.stringify(counters) },
+    });
+  });
+}
+
 /** Tier-fit gate — VOL-01 §4.2 mapping rule (mechanical, no judgment). */
 export function tierUnlocks(tier: string, tierFit: 'FREE' | 'PRO' | 'MAX'): boolean {
   if (tierFit === 'FREE') return true;

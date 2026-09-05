@@ -90,14 +90,34 @@ export async function POST(req: Request) {
     return fail(409, 'CONFLICT_IDEMPOTENCY', 'this ad session already granted its reward');
   }
 
-  await db.boostLedger.create({
-    data: {
-      userId,
-      adSessionId,
-      amount: BOOST_AMOUNT,
-      utcDay: day,
-    },
-  });
+  // ── atomic day cap: the ledger row's id is deterministic
+  // (user|day|slot) — the PK constraint makes the cap race-free. Two
+  // parallel claims with one slot left cannot both insert; the loser
+  // catches P2002 and reports the cap honestly. ──
+  const slot = grants.length; // 0-based next slot; >= cap was refused above
+  try {
+    await db.boostLedger.create({
+      data: {
+        id: `bst_${userId}_${day}_${slot}`,
+        userId,
+        adSessionId,
+        amount: BOOST_AMOUNT,
+        utcDay: day,
+      },
+    });
+  } catch {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: 'boost_cap',
+          message: "that's today's max — resets 00:00 UTC",
+          resets_at: dailyResetsAt(),
+        },
+      },
+      { status: 429 },
+    );
+  }
 
   const ent = await resolveEntitlement(userId);
   const boost = await quotaSnapshot(ent, 'srv');

@@ -1,11 +1,14 @@
 // POST /api/auth/otp/request — email OTP issuance (VOL-06 §2).
-// Codes are hashed at rest, TTL 10 min; the dev log driver prints the code
-// to the server log (honest dev-mode copy ships in the UI). Lockout after
-// 5 failed verifies, keyed for the UTC day (T6.1).
+// Codes are hashed at rest, TTL 10 min; delivery driver sends real mail when
+// SMTP is configured, else the honest dev log driver. Lockout after 5 failed
+// verifies, keyed for the UTC day (T6.1). Anti-abuse: per-IP burst window AND
+// per-email daily send cap + minimum resend interval — rotating spoofed
+// X-Forwarded-For values cannot trigger unlimited emails to a victim address.
 
 import { issueOtp } from '@/lib/auth';
 import { ok, fail, ERR } from '@/lib/envelope';
 import { burstCheck } from '@/lib/burst';
+import { isEmail } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,20 +18,19 @@ export async function POST(req: Request) {
     return fail(ERR.RATE_LIMITED, 'RATE_LIMITED', 'too many code requests');
   }
 
-  let body: { email?: string };
+  let body: { email?: unknown };
   try {
-    body = (await req.json()) as { email?: string };
+    body = (await req.json()) as { email?: unknown };
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body; field: email');
   }
-  const email = body.email?.trim() ?? '';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!isEmail(body.email)) {
     return fail(ERR.ARGUMENTS_INVALID, 'ARGUMENTS_INVALID', 'a valid email is required', {
       field: 'email',
     });
   }
 
-  const result = await issueOtp(email);
+  const result = await issueOtp(body.email);
   if (!result.ok) {
     return fail(ERR.RATE_LIMITED, 'RATE_LIMITED', 'too many attempts — locked for the day', {
       resets_at: result.resets_at,
@@ -38,8 +40,10 @@ export async function POST(req: Request) {
   // The code itself never crosses the wire; the UI states where to find it.
   return ok({
     sent: true,
-    delivery: 'log',
+    delivery: result.driver,
     message:
-      'Verification code sent. In this build environment it appears in the server log.',
+      result.driver === 'smtp'
+        ? 'Verification code sent to your email address.'
+        : 'Verification code generated. In this build environment it appears in the server log.',
   });
 }

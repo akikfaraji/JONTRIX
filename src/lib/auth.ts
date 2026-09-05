@@ -18,11 +18,12 @@
 // 10-min TTL, day-keyed lockouts. Expired rows purge opportunistically.
 
 import { cookies } from 'next/headers';
-import { createHmac, randomBytes, randomInt } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { db } from '@/lib/db';
 import { sha256, randomSecret } from '@/lib/tokens';
 import { utcDay } from '@/lib/utc';
 import { audit } from '@/lib/audit';
+import { codeEmail, sendMail, type MailDriver } from '@/lib/mailer';
 
 const COOKIE = 'jx_sess';
 const ACCESS_TTL_MS = 15 * 60 * 1000; // 15 min — VOL-06 §2
@@ -92,22 +93,27 @@ async function ttlDel(key: string): Promise<void> {
 
 export interface OtpIssue {
   ok: true;
-  /** Present only under the log driver — never sent to the client. */
-  devCode?: string;
+  /** Delivery driver actually used — surfaced honestly to the client. */
+  driver: MailDriver;
 }
 export interface OtpRefusal {
   ok: false;
-  reason: 'locked';
+  reason: 'locked' | 'send_cap' | 'resend_interval';
   resets_at: string;
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+const OTP_SEND_CAP_PER_DAY = 5;
+const OTP_RESEND_INTERVAL_MS = 30 * 1000;
+
+function normalizeEmail(email: unknown): string {
+  return String(email ?? '').trim().toLowerCase();
 }
 
 /**
  * Issue an email OTP. Codes are hashed at rest (VOL-04 §1.4); the plaintext
- * is returned to the caller ONLY for the dev log driver.
+ * reaches ONLY the mail transport (or the dev log). Anti-flood: max 5 sends
+ * per address per UTC day and a 30 s resend interval — rotating spoofed
+ * X-Forwarded-For values cannot turn this endpoint into a mail bomber.
  */
 export async function issueOtp(emailRaw: string): Promise<OtpIssue | OtpRefusal> {
   const email = normalizeEmail(emailRaw);
@@ -117,21 +123,49 @@ export async function issueOtp(emailRaw: string): Promise<OtpIssue | OtpRefusal>
     return { ok: false, reason: 'locked', resets_at: resets.toISOString() };
   }
 
+  // per-address resend interval
+  const lastKey = `otp_last_sent:${email}`;
+  const last = await ttlGet(lastKey);
+  if (last && Date.now() - Number(last) < OTP_RESEND_INTERVAL_MS) {
+    const resets = new Date(Number(last) + OTP_RESEND_INTERVAL_MS);
+    return { ok: false, reason: 'resend_interval', resets_at: resets.toISOString() };
+  }
+
+  // per-address daily send cap
+  const sentKey = `otp_sent_count:${email}:${utcDay()}`;
+  const sentRaw = await ttlGet(sentKey);
+  const sent = sentRaw ? Number(sentRaw) : 0;
+  if (sent >= OTP_SEND_CAP_PER_DAY) {
+    const resets = new Date(Date.now() + 24 * 3600 * 1000);
+    return { ok: false, reason: 'send_cap', resets_at: resets.toISOString() };
+  }
+
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await ttlSet(`otp_code:${email}`, JSON.stringify({ hash: sha256(code), attempts: 0 }), OTP_TTL_MS);
+  await ttlSet(lastKey, String(Date.now()), 24 * 3600 * 1000);
+  await ttlSet(sentKey, String(sent + 1), 24 * 3600 * 1000);
 
-  // Delivery driver — `log` until SMTP lands with the billing phase (VOL-06 §2).
-  console.log(`[auth] OTP for ${email}: ${code} (dev log driver — expires in 10 min)`);
+  // Delivery — real SMTP when configured; honest dev log driver otherwise.
+  const mail = codeEmail(code);
+  const result = await sendMail({ to: email, ...mail });
+  const driver = result.driver;
+  if (result.driver === 'smtp' && !result.delivered) {
+    console.error(`[auth] OTP mail delivery failed for ${email}: ${result.error}`);
+  }
 
-  return { ok: true, devCode: code };
+  return { ok: true, driver };
 }
 
 /** Verify an email OTP; on success returns the normalized email. */
 export async function verifyOtp(
-  emailRaw: string,
-  code: string,
+  emailRaw: unknown,
+  codeRaw: unknown,
 ): Promise<{ ok: true; email: string } | { ok: false; reason: 'expired' | 'invalid' | 'locked' }> {
+  if (typeof emailRaw !== 'string' || typeof codeRaw !== 'string') {
+    return { ok: false, reason: 'invalid' };
+  }
   const email = normalizeEmail(emailRaw);
+  const code = codeRaw;
   const key = `otp_code:${email}`;
   const raw = await ttlGet(key);
   if (!raw) return { ok: false, reason: 'expired' };
@@ -166,23 +200,64 @@ export async function upsertUserByEmail(email: string) {
     return identity.user;
   }
 
-  const base = email.split('@')[0].replace(/[^a-z0-9_.-]/gi, '') || 'user';
+  const base = email.split('@')[0].replace(/[^a-z0-9_.-]/gi, '').slice(0, 30) || 'user';
   let handle = base;
-  for (let i = 0; i < 5; i++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const exists = await db.user.findUnique({ where: { handle } });
-    if (!exists) break;
+    if (!exists) {
+      try {
+        return await db.user.create({
+          data: {
+            handle,
+            email,
+            authIdentities: {
+              create: { provider: 'email', providerUid: email },
+            },
+          },
+        });
+      } catch {
+        // unique-constraint race on handle or email — retry with a suffix
+      }
+    }
     handle = `${base}_${randomBytes(2).toString('hex')}`;
   }
+  throw new Error('could not provision a unique handle');
+}
 
-  return db.user.create({
-    data: {
-      handle,
-      email,
-      authIdentities: {
-        create: { provider: 'email', providerUid: email },
-      },
-    },
-  });
+/**
+ * Registration path: create a user that does not exist yet, with a scrypt
+ * credential and the shared AuthIdentity('email') marker so OTP and password
+ * logins converge on the same identity. Caller has already checked the email
+ * is free — a racing duplicate surfaces as a unique-constraint error and is
+ * reported to the caller (409) rather than silently merged.
+ */
+export async function createProvisionedUser(
+  email: string,
+  passwordHash: string | null,
+  displayName: string | null,
+) {
+  const base = email.split('@')[0].replace(/[^a-z0-9_.-]/gi, '').slice(0, 30) || 'user';
+  let handle = base;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const exists = await db.user.findUnique({ where: { handle } });
+    if (!exists) {
+      try {
+        return await db.user.create({
+          data: {
+            handle,
+            email,
+            displayName,
+            authIdentities: { create: { provider: 'email', providerUid: email } },
+            ...(passwordHash ? { credential: { create: { passwordHash } } } : {}),
+          },
+        });
+      } catch {
+        // handle or email unique race — retry with a fresh suffix
+      }
+    }
+    handle = `${base}_${randomBytes(2).toString('hex')}`;
+  }
+  throw new Error('could not provision a unique handle');
 }
 
 // ── session lifecycle ───────────────────────────────────────────────────────
@@ -230,7 +305,10 @@ async function verifyAccess(
 ): Promise<{ sid: string; uid: string } | null> {
   const [payload, mac] = token.split('.');
   if (!payload || !mac) return null;
-  if (sign(payload, secret) !== mac) return null;
+  // constant-time MAC comparison (timing-attack hardening)
+  const expected = Buffer.from(sign(payload, secret));
+  const provided = Buffer.from(mac);
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString()) as {
       sid: string;
@@ -297,14 +375,21 @@ export async function getSessionAuth(req: Request): Promise<AuthContext | null> 
     return null;
   }
 
-  // Rotate: this refresh dies, a new pair is issued via the response cookie
-  // by the caller (route handlers call `attachSessionCookie` after this).
-  // In-place: mark consumed and issue fresh tokens for the same row.
+  // Rotate: this refresh dies, a new pair is issued for the same row.
+  // Atomic single-use: the update is conditional on the hash still matching
+  // — two parallel requests carrying the same consumed refresh cannot both
+  // win (the loser sees count 0 and is treated as a replay).
   const newRefresh = randomSecret();
-  await db.session.update({
-    where: { id: row.id },
+  const rotated = await db.session.updateMany({
+    where: { id: row.id, hashSha256: sha256(refresh) },
     data: { hashSha256: sha256(newRefresh) },
   });
+  if (rotated.count === 0) {
+    // lost the race → the winner already consumed this refresh; treat this
+    // presentation as a replay attempt and let the next clean request
+    // trigger family revocation through the revokedAt path above.
+    return null;
+  }
   const newAccess = await mintAccess(row.id, row.userId, secret);
   await setSessionCookie(req, { access: newAccess, refresh: newRefresh });
   return { userId: row.userId, sessionId: row.id, kind: row.kind };

@@ -16,13 +16,13 @@ export async function POST(req: Request) {
     return fail(ERR.RATE_LIMITED, 'RATE_LIMITED', 'too many attempts');
   }
 
-  let body: { email?: string; code?: string };
+  let body: { email?: unknown; code?: unknown };
   try {
-    body = (await req.json()) as { email?: string; code?: string };
+    body = (await req.json()) as { email?: unknown; code?: unknown };
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body; fields: email, code');
   }
-  if (!body.email || !body.code) {
+  if (typeof body.email !== 'string' || typeof body.code !== 'string') {
     return fail(ERR.ARGUMENTS_INVALID, 'ARGUMENTS_INVALID', 'email and code are required');
   }
 
