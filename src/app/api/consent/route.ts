@@ -8,6 +8,7 @@ import { ok, fail, ERR } from '@/lib/envelope';
 import { db } from '@/lib/db';
 import { audit } from '@/lib/audit';
 import { burstCheck } from '@/lib/burst';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,11 @@ export async function POST(req: Request) {
 
   let body: { consent?: string; surface?: string };
   try {
-    body = (await req.json()) as { consent?: string; surface?: string };
+    const parsedBody = await readJsonWithLimit(req, 4 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as { consent?: string; surface?: string };
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
   }

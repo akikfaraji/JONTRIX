@@ -9,11 +9,19 @@ export function isEmail(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 254 && EMAIL_RE.test(value);
 }
 
-/** Request-body size guard — rejects payloads above `max` bytes with 413. */
+/** Request-body size guard — rejects payloads above `max` bytes with 413.
+ *  Also refuses explicitly non-JSON content types (415): the API speaks
+ *  JSON only, and `text/plain` bodies are the classic CSRF smuggling shape
+ *  for non-JSON endpoints. A missing content-type header is tolerated
+ *  (thin SDKs omit it); a WRONG one is not. */
 export async function readJsonWithLimit(
   req: Request,
   max: number,
-): Promise<{ ok: true; body: unknown } | { ok: false; tooLarge: boolean }> {
+): Promise<{ ok: true; body: unknown } | { ok: false; tooLarge: boolean; unsupportedType?: boolean }> {
+  const ct = (req.headers.get('content-type') ?? '').toLowerCase();
+  if (ct && !ct.includes('application/json')) {
+    return { ok: false, tooLarge: false, unsupportedType: true };
+  }
   const len = Number(req.headers.get('content-length') ?? '0');
   if (len > max) return { ok: false, tooLarge: true };
   const text = await req.text();

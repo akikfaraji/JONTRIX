@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { db } from '@/lib/db';
 import { sha256 } from '@/lib/tokens';
 import { ipLimit, clientIp } from '@/lib/mcp/ratelimit';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,11 @@ export async function POST(req: Request) {
 
   let body: { agent_name?: string; client_hint?: string } = {};
   try {
-    body = (await req.json()) as typeof body;
+    const parsedBody = await readJsonWithLimit(req, 4 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as typeof body;
   } catch {
     // empty body is valid per §4.2
   }

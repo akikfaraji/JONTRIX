@@ -13,6 +13,7 @@ import { resolveEntitlement } from '@/lib/entitlements';
 import { audit } from '@/lib/audit';
 import { mintSecret, sha256 } from '@/lib/tokens';
 import { ipLimit, clientIp } from '@/lib/mcp/ratelimit';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -243,12 +244,18 @@ export async function POST(req: Request) {
   const ctype = req.headers.get('content-type') ?? '';
   if (ctype.includes('application/json')) {
     try {
-      form = (await req.json()) as Record<string, string>;
+      const parsedBody = await readJsonWithLimit(req, 8 * 1024);
+      if (!parsedBody.ok) throw new Error('BAD_BODY');
+      form = parsedBody.body as Record<string, string>;
     } catch {
       form = {};
     }
   } else {
-    const params = new URLSearchParams(await req.text());
+    const rawForm = await req.text();
+    if (rawForm.length > 16 * 1024) {
+      return new Response('Payload too large', { status: 413 });
+    }
+    const params = new URLSearchParams(rawForm);
     form = Object.fromEntries(params.entries());
   }
 

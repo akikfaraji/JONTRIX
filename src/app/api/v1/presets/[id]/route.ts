@@ -7,6 +7,7 @@ import { ok, fail, ERR } from '@/lib/envelope';
 import { db } from '@/lib/db';
 import { checkAndIncrement } from '@/lib/entitlements';
 import { burstCheck } from '@/lib/burst';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,11 @@ export async function PUT(req: Request, { params }: Params) {
 
   let body: { name?: string; payload?: unknown };
   try {
-    body = (await req.json()) as typeof body;
+    const parsedBody = await readJsonWithLimit(req, 64 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as typeof body;
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
   }

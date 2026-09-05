@@ -75,7 +75,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const preflight = await preflightJont(id, args);
   if (preflight) {
     if (preflight.code === 'ARGUMENTS_INVALID') {
-      return fail(ERR.ARGUMENTS_INVALID, 'ARGUMENTS_INVALID', preflight.message);
+      return fail(ERR.ARGUMENTS_INVALID, 'ARGUMENTS_INVALID', preflight.message, {
+        fields: preflight.issues?.map((i) => `${i.field} ${i.message}`).join('; '),
+      });
     }
     if (preflight.code === 'CLIENT_CONTEXT') return fail(400, 'CLIENT_CONTEXT', preflight.message);
     if (preflight.code === 'UNKNOWN_TOOL') return fail(ERR.UNKNOWN_TOOL, 'UNKNOWN_TOOL', preflight.message);

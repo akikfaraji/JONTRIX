@@ -11,6 +11,7 @@ import { mintSecret } from '@/lib/tokens';
 import { resolveEntitlement } from '@/lib/entitlements';
 import { audit } from '@/lib/audit';
 import { burstCheck } from '@/lib/burst';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +87,11 @@ export async function POST(req: Request) {
 
   let body: { kind?: string; name?: string; scopes?: Record<string, unknown> };
   try {
-    body = (await req.json()) as typeof body;
+    const parsedBody = await readJsonWithLimit(req, 8 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as typeof body;
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
   }

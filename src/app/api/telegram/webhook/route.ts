@@ -7,6 +7,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { db } from '@/lib/db';
 import { handleUpdate, type TgUpdate } from '@/lib/bot/commands';
 import { telegramBotToken } from '@/lib/telegram';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,9 +42,11 @@ export async function POST(req: Request) {
 
   let update: TgUpdate;
   try {
-    update = (await req.json()) as TgUpdate;
+    const parsedBody = await readJsonWithLimit(req, 64 * 1024);
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+    update = parsedBody.body as TgUpdate;
   } catch {
-    return Response.json({ ok: true }); // malformed update: ack, never retry-storm
+    return Response.json({ ok: true }); // malformed/oversized update: ack, never retry-storm
   }
 
   // idempotency by update_id (§1 MUST) — a redelivery is a no-op

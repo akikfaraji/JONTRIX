@@ -8,7 +8,7 @@
 import { issueOtp } from '@/lib/auth';
 import { ok, fail, ERR } from '@/lib/envelope';
 import { burstCheck } from '@/lib/burst';
-import { isEmail } from '@/lib/validate';
+import { isEmail, readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,11 @@ export async function POST(req: Request) {
 
   let body: { email?: unknown };
   try {
-    body = (await req.json()) as { email?: unknown };
+    const parsedBody = await readJsonWithLimit(req, 4 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as { email?: unknown };
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body; field: email');
   }

@@ -11,6 +11,7 @@ import { getSessionAuth } from '@/lib/auth';
 import { ok, fail, ERR } from '@/lib/envelope';
 import { resolveEntitlement, quotaSnapshot } from '@/lib/entitlements';
 import { utcDay, dailyResetsAt } from '@/lib/utc';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,11 @@ export async function POST(req: Request) {
 
   let body: { ad_session_id?: string; signature?: string };
   try {
-    body = (await req.json()) as typeof body;
+    const parsedBody = await readJsonWithLimit(req, 4 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as typeof body;
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
   }

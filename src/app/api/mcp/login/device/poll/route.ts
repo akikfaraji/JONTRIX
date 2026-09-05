@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { sha256 } from '@/lib/tokens';
 import { ipLimit, clientIp } from '@/lib/mcp/ratelimit';
 import { mintSessionPair } from '@/lib/mcp/sessions';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,11 @@ export async function POST(req: Request) {
 
   let body: { device_code?: string };
   try {
-    body = (await req.json()) as typeof body;
+    const parsedBody = await readJsonWithLimit(req, 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as typeof body;
   } catch {
     return Response.json({ error: 'invalid_request' }, { status: 400 });
   }

@@ -85,15 +85,26 @@ async function main() {
 
   // Mini App session identity (§5: "Mini App session or anonymous identity")
   // — the test signs in so grants land on the tester user, matching cleanup.
+  // Robust against the 30 s resend-interval and the 5/day send cap: poll for
+  // a fresh code, wait through the interval window, then verify.
   const jar: string[] = [];
   const signin = async () => {
-    await fetch('http://localhost:3000/api/auth/otp/request', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'tester@jontrix.test' }),
-    });
     const { execSync } = await import('node:child_process');
-    const code = execSync('tail -c 3000 dev.log | strings | grep -oE "OTP for tester@jontrix.test: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$"').toString().trim();
+    let code = '';
+    for (let attempt = 0; attempt < 8 && !code; attempt++) {
+      await fetch('http://localhost:3000/api/auth/otp/request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'tester@jontrix.test' }),
+      });
+      for (let poll = 0; poll < 6 && !code; poll++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        code = execSync(
+          'tail -c 200000 dev.log | strings | grep -oE "OTP for tester@jontrix.test: [0-9]{6}" | tail -1 | grep -oE "[0-9]{6}$"',
+        ).toString().trim();
+      }
+    }
+    if (!code) throw new Error('no OTP code surfaced — check the daily send cap for tester@jontrix.test');
     const res = await fetch('http://localhost:3000/api/auth/otp/verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

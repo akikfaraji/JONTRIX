@@ -14,6 +14,7 @@ import { preflightJont, dispatchServerJont } from '@/lib/jont-runtime/dispatch';
 import { db } from '@/lib/db';
 import { utcDay, dailyResetsAt } from '@/lib/utc';
 import { UPGRADE_URL } from '@/lib/mcp/protocol';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,11 @@ export async function POST(req: Request) {
 
   let body: { tool?: string; arguments?: Record<string, unknown>; idempotency_key?: string };
   try {
-    body = (await req.json()) as typeof body;
+    const parsedBody = await readJsonWithLimit(req, 256 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as typeof body;
   } catch {
     return Response.json(
       { ok: false, error: { code: 'BAD_REQUEST', message: 'malformed JSON body' } },

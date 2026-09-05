@@ -9,6 +9,7 @@ import { ok, fail, ERR } from '@/lib/envelope';
 import { db } from '@/lib/db';
 import { mintSecret } from '@/lib/tokens';
 import { audit } from '@/lib/audit';
+import { readJsonWithLimit } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,11 @@ export async function POST(req: Request) {
 
   let body: { confirm?: string };
   try {
-    body = (await req.json()) as { confirm?: string };
+    const parsedBody = await readJsonWithLimit(req, 4 * 1024);
+
+    if (!parsedBody.ok) throw new Error('BAD_BODY');
+
+    body = parsedBody.body as { confirm?: string };
   } catch {
     return fail(ERR.BAD_REQUEST, 'BAD_REQUEST', 'malformed JSON body');
   }
