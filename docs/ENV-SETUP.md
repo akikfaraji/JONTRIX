@@ -5,6 +5,57 @@ runs with only `DATABASE_URL` (mail driver falls back to `log`, OAuth reports
 "not configured" honestly). Real email, social login, and a public deploy need
 the rest. All options are free tier.
 
+## Local first — testing with no domain
+
+Localhost needs none of the domain-dependent pieces. Minimal local `.env`:
+
+```
+DATABASE_URL="file:./db/jontrix.db"
+APP_ORIGIN="http://localhost:3000"
+NODE_ENV="development"
+```
+
+That is the whole file. `AUTH_SECRET` auto-generates to `db/auth-secret`,
+cookies run without the Secure flag over plain http, the CSRF guard passes
+same-origin localhost requests, and HSTS is inert (browsers honor it only
+when received over TLS).
+
+**Seeing the emails locally — pick one:**
+
+1. **Mailpit (self-hosted, offline, $0)** — a fake SMTP server with a web
+   inbox. Download the single binary from
+   [github.com/axllent/mailpit/releases](https://github.com/axllent/mailpit/releases),
+   run it, then add:
+   ```
+   SMTP_HOST="localhost"
+   SMTP_PORT="1025"
+   SMTP_FROM="JONTRIX <noreply@localhost>"
+   ```
+   Every verification/reset mail lands at `http://localhost:8025`. No
+   provider, no domain, no internet needed. Use `npm run db:reset` if you
+   exhaust the 5-codes/day OTP cap while testing.
+2. **Gmail app password (real delivery, no domain)** — Section 2 Option A.
+   `SMTP_FROM` is your own gmail address; mail reaches real inboxes, so you
+   test deliverability end to end.
+3. **Log driver (zero config)** — set nothing; codes/links print to the dev
+   log (`npm run dev` tees to `dev.log`).
+
+**Social login on localhost works now:** both providers allow
+`http://localhost` redirects — register
+`http://localhost:3000/api/auth/oauth/google/callback` and
+`http://localhost:3000/api/auth/oauth/github/callback` (Sections 3–4). When
+you later get a domain, just ADD the https URIs to the same OAuth apps; the
+keys stay the same.
+
+**Moving to a domain later — 4 changes, nothing else:**
+
+1. `APP_ORIGIN="https://your-domain"` (no trailing slash).
+2. Add the production callback URIs in the Google/GitHub consoles.
+3. `SMTP_FROM` → a sender on your verified domain (Brevo/Resend DNS,
+   Section 2) for proper deliverability.
+4. On the host: `NODE_ENV=production` (+ hosted Postgres if not a single
+   VPS, Section 1).
+
 ## 0. Secrets you generate yourself (instant, free)
 
 ```bash
