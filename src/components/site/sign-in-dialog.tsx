@@ -71,10 +71,14 @@ export function SignInDialog({ open, onOpenChange, onSignedIn }: SignInDialogPro
       setResetSent(false);
       setError(null);
       setNotice(null);
-      // honest OAuth availability probe (never bounces to an error page)
+      // honest OAuth availability probe (never bounces to an error page).
+      // Uses /status — probing the start route with redirect:'manual' yields
+      // an opaqueredirect (status 0), so a status===302 check never held and
+      // the buttons stayed disabled even when providers were configured.
       (['google', 'github'] as const).forEach((p) => {
-        fetch(`/api/auth/oauth/${p}`, { redirect: 'manual' })
-          .then((r) => setOauth((s) => ({ ...s, [p]: r.status === 302 || r.status === 307 })))
+        fetch(`/api/auth/oauth/${p}/status`)
+          .then((r) => r.json())
+          .then((j) => setOauth((s) => ({ ...s, [p]: Boolean(j?.data?.configured) })))
           .catch(() => setOauth((s) => ({ ...s, [p]: false })));
       });
     }
