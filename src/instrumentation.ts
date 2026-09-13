@@ -12,6 +12,7 @@ export async function register(): Promise<void> {
     }
   } catch (err) {
     // Never crash the server on bootstrap failure — health route reports it.
-    console.error('[instrumentation] bootstrap failed:', err instanceof Error ? err.message : err);
+    // Prisma errors often carry an empty .message, so log the full value.
+    console.error('[instrumentation] bootstrap failed:', err instanceof Error ? (err.stack ?? err.message) : String(err));
   }
 }
