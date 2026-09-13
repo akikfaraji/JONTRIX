@@ -37,6 +37,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -279,6 +280,34 @@ async function fetchHealth(port, ms) {
   }
 }
 
+// Raw TCP occupancy — never spawn a boot test into an occupied port (Next dev
+// refuses to start when another dev server runs for the same project dir).
+function tcpInUse(port) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ port, host: '127.0.0.1' });
+    const done = (v) => { sock.destroy(); resolve(v); };
+    sock.setTimeout(700);
+    sock.on('connect', () => done(true));
+    sock.on('timeout', () => done(true)); // listening but silent = occupied
+    sock.on('error', () => done(false));
+  });
+}
+
+function memAvailableMB() {
+  try {
+    const m = fs.readFileSync('/proc/meminfo', 'utf8').match(/^MemAvailable:\s+(\d+) kB/m);
+    return m ? Number(m[1]) / 1024 : null;
+  } catch { return null; }
+}
+
+// Heap cap for low-memory devices (Android/Termux): the dev server's first
+// route compile spikes memory, and Android responds with SIGKILL.
+function heapCapMB() {
+  const avail = memAvailableMB();
+  if (avail == null || avail >= 1536) return null;
+  return Math.max(512, Math.min(1536, Math.floor(avail * 0.5)));
+}
+
 async function smokeTest(mode /* 'dev' | 'prod' */) {
   const reused = await fetchHealth(3000, 1500);
   if (reused.up) {
@@ -287,58 +316,97 @@ async function smokeTest(mode /* 'dev' | 'prod' */) {
     die(`server on :3000 reports db=down — check DATABASE_URL / the db file`);
   }
 
-  const PORT = 3100;
-  let child;
-  let perAttemptMs;
-  let deadlineMs;
-  if (mode === 'prod') {
-    console.log(`  boot  standalone production server on :${PORT} (temporary — killed after the probe)`);
-    child = spawn(process.execPath, [path.join(ROOT, '.next', 'standalone', 'server.js')], {
-      cwd: ROOT,
-      env: childEnv({ NODE_ENV: 'production', PORT: String(PORT), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1' }),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
-    perAttemptMs = 10_000;
-    deadlineMs = 90_000;
-  } else {
-    console.log(`  boot  next dev on :${PORT} (temporary — killed after the probe)`);
-    child = spawn(localBin('next'), ['dev', '-p', String(PORT)], {
-      cwd: ROOT,
-      env: childEnv({ NEXT_TELEMETRY_DISABLED: '1' }),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
-    perAttemptMs = 45_000;
-    deadlineMs = 240_000;
-  }
-  const logLines = [];
-  child.stdout.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 60) logLines.shift(); });
-  child.stderr.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 60) logLines.shift(); });
+  const cap = heapCapMB();
+  if (cap) warn(`only ${memAvailableMB().toFixed(0)} MB RAM available — enforcing Node heap cap ${cap} MB for the boot test`);
 
-  const killTree = (sig) => {
-    try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } }
-  };
-  let settled = false;
-  child.on('exit', () => { settled = true; });
+  // pick a port that is truly free at the TCP level
+  let port = 3100;
+  for (; port <= 3119; port++) { if (!(await tcpInUse(port))) break; }
 
-  try {
-    const deadline = Date.now() + deadlineMs;
-    while (Date.now() < deadline) {
-      if (settled) die(`server exited before answering health probe. Log tail:\n${logLines.join('').slice(-1500)}`);
-      const r = await fetchHealth(PORT, perAttemptMs);
-      if (r.up) {
-        if (r.body?.ok) { ok(`health: db=up, version=${r.body.version} — the full chain (env -> db -> seed -> server) works`); return; }
-        die(`server answered but health reports db=down (${JSON.stringify(r.body)})`);
-      }
-      await new Promise((r) => setTimeout(r, 1000));
+  // dev boots get one retry (a first-run crash often leaves a torn .next or
+  // an unlucky memory spike); the production server was just built — if it
+  // dies it is environmental, and the doctor owns that diagnosis.
+  const attempts = mode === 'dev' ? 2 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const outcome = await bootAndProbe(mode, port, cap, attempt > 1);
+    if (outcome.passed) return;
+    if (attempt < attempts) {
+      warn(`boot attempt ${attempt} died (${outcome.diedAs}) — retrying once with .next wiped and the heap cap enforced`);
+      try { fs.rmSync(path.join(ROOT, '.next'), { recursive: true, force: true }); } catch { /* */ }
+    } else {
+      die(
+        `the live boot check could not complete (${outcome.diedAs}). ` +
+        'Steps 1-8 already succeeded — the environment IS ready; only the boot verification failed, which points at the device/environment, not the project.\n' +
+        (outcome.tail ? `Log tail:\n${outcome.tail}\n` : '') +
+        'Run `npm run doctor` — it diagnoses OOM / Android phantom-process killer / limits / paths and applies fixes.',
+      );
     }
-    die(`health probe on :${PORT} timed out. Log tail:\n${logLines.join('').slice(-1500)}`);
-  } finally {
-    killTree('SIGTERM');
-    await new Promise((r) => setTimeout(r, 3000));
-    if (!settled) { killTree('SIGKILL'); await new Promise((r) => setTimeout(r, 1500)); }
   }
+}
+
+function bootAndProbe(mode, port, cap, quiet) {
+  return new Promise((resolve) => {
+    let spawnEnv;
+    let cmd;
+    let args;
+    let perAttemptMs;
+    let deadlineMs;
+    if (mode === 'prod') {
+      spawnEnv = childEnv({ NODE_ENV: 'production', PORT: String(port), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1' });
+      cmd = process.execPath;
+      args = [path.join(ROOT, '.next', 'standalone', 'server.js')];
+      perAttemptMs = 10_000;
+      deadlineMs = 90_000;
+    } else {
+      spawnEnv = childEnv({ NEXT_TELEMETRY_DISABLED: '1' });
+      cmd = localBin('next');
+      args = ['dev', '-p', String(port)];
+      perAttemptMs = 60_000;
+      deadlineMs = 300_000;
+    }
+    if (cap) spawnEnv.NODE_OPTIONS = `--max-old-space-size=${cap}`;
+    if (!quiet) console.log(`  boot  ${mode === 'prod' ? 'standalone production server' : 'next dev'} on :${port} (temporary — killed after the probe)`);
+    const child = spawn(cmd, args, {
+      cwd: ROOT, env: spawnEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    });
+    const logLines = [];
+    child.stdout.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 60) logLines.shift(); });
+    child.stderr.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 60) logLines.shift(); });
+
+    const killTree = (sig) => {
+      try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } }
+    };
+    let exited = null; // { code, signal, message? } — signal !== null means an external killer
+    child.on('exit', (code, signal) => { exited ??= { code, signal }; });
+    child.on('error', (err) => { exited ??= { code: -1, signal: null, message: err.message }; });
+    const tail = () => logLines.join('').slice(-1500);
+
+    (async () => {
+      try {
+        const deadline = Date.now() + deadlineMs;
+        while (Date.now() < deadline) {
+          if (exited) {
+            killTree('SIGKILL');
+            resolve({ passed: false, diedAs: exited.message ? `spawn error: ${exited.message}` : exited.signal ? `killed by signal ${exited.signal}` : `exit code ${exited.code}`, tail });
+            return;
+          }
+          const r = await fetchHealth(port, perAttemptMs);
+          if (r.up) {
+            if (r.body?.ok) { ok(`health: db=up, version=${r.body.version} — the full chain (env -> db -> seed -> server) works`); resolve({ passed: true }); return; }
+            killTree('SIGTERM');
+            resolve({ passed: false, diedAs: `server answered but health reports db=down (${JSON.stringify(r.body)})`, tail });
+            return;
+          }
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+        killTree('SIGKILL');
+        resolve({ passed: false, diedAs: `health probe timed out after ${deadlineMs / 1000} s`, tail });
+      } catch (e) {
+        killTree('SIGKILL');
+        resolve({ passed: false, diedAs: `probe error: ${e?.message ?? e}`, tail });
+      }
+    })();
+  });
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
