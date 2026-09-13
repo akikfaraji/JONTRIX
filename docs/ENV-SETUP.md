@@ -1,5 +1,12 @@
 # Environment setup — where to get every variable
 
+> One-command path: `npm run setup` creates/repairs `.env` from the canonical
+> template (auto-generating `AUTH_SECRET`, `BOOST_SALT`,
+> `TELEGRAM_WEBHOOK_SECRET`), pins `DATABASE_URL` to an absolute sqlite path,
+> pushes the schema, seeds, verifies the VOL-04 §7 contract, and probes
+> `/api/health` on a live server. This document explains what it sets up and
+> where every value comes from.
+
 Grounded in the code: every var below is read by `src/lib/*` today. Dev mode
 runs with only `DATABASE_URL` (mail driver falls back to `log`, OAuth reports
 "not configured" honestly). Real email, social login, and a public deploy need
@@ -12,7 +19,6 @@ Localhost needs none of the domain-dependent pieces. Minimal local `.env`:
 ```
 DATABASE_URL="file:./db/jontrix.db"
 APP_ORIGIN="http://localhost:3000"
-NODE_ENV="development"
 ```
 
 That is the whole file. `AUTH_SECRET` auto-generates to `db/auth-secret`,

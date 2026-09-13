@@ -49,7 +49,21 @@ docs/            Decision register, ledger statements
 
 ## Getting started
 
-Requires Node.js 18+ and npm.
+Requires Node.js 20.9+ and npm. One command does everything — dependencies,
+`.env` creation/repair with auto-generated secrets, database schema, seed,
+verification, and a live server health check:
+
+```bash
+npm run setup
+npm run dev            # dashboard on http://localhost:3000
+```
+
+Useful flags: `npm run setup -- --fresh` (wipe + reseed the database),
+`-- --build` (also validate the production build), `-- --no-smoke`,
+`-- --skip-install`. The command is idempotent — re-run any time; existing
+`.env` values are never clobbered, only completed.
+
+Prefer doing it by hand? The equivalent manual path:
 
 ```bash
 npm install
