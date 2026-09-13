@@ -210,7 +210,27 @@ function setupEnvironment() {
           val = `file:${path.join(ROOT, p)}`;
           fix(`DATABASE_URL relative path pinned absolute: ${val}`);
         } else {
-          fs.mkdirSync(path.dirname(p), { recursive: true });
+          // An absolute path OUTSIDE this repo ships in clones (the tracked
+          // .env carries the absolute path of whatever machine last committed
+          // it). Repin into the repo and migrate the file — the database must
+          // live with the app it belongs to.
+          const inRepo = path.join(ROOT, 'db', 'jontrix.db');
+          if (p !== inRepo && !p.startsWith(ROOT + path.sep)) {
+            if (fs.existsSync(p) && !fs.existsSync(inRepo)) {
+              fs.mkdirSync(path.dirname(inRepo), { recursive: true });
+              try { fs.renameSync(p, inRepo); } catch { fs.copyFileSync(p, inRepo); fs.rmSync(p, { force: true }); }
+              for (const suffix of ['-wal', '-shm', '-journal']) {
+                try { if (fs.existsSync(p + suffix)) fs.renameSync(p + suffix, inRepo + suffix); } catch { /* */ }
+              }
+              fix(`migrated the database file into the repo: ${p} -> ${inRepo}`);
+            } else if (fs.existsSync(p)) {
+              warn(`a stray database file also exists at ${p} — the repo copy is authoritative; delete the stray if unwanted`);
+            }
+            val = `file:${inRepo}`;
+            fix(`DATABASE_URL repinned into the repo: ${val}`);
+          } else {
+            fs.mkdirSync(path.dirname(p), { recursive: true });
+          }
         }
       } // non-file: URLs (hosted postgres) pass through untouched
     }
@@ -338,42 +358,61 @@ async function smokeTest(mode /* 'dev' | 'prod' */) {
         `the live boot check could not complete (${outcome.diedAs}). ` +
         'Steps 1-8 already succeeded — the environment IS ready; only the boot verification failed, which points at the device/environment, not the project.\n' +
         (outcome.tail ? `Log tail:\n${outcome.tail}\n` : '') +
-        'Run `npm run doctor` — it diagnoses OOM / Android phantom-process killer / limits / paths and applies fixes.',
+        'Run `npm run doctor` — it boots through a ladder of configurations (dev-like stdin, pinned stdin, wiped cache, webpack) with exit-stack forensics, applies fixes, and pins the engine that survives.',
       );
     }
   }
 }
 
+// The dev engine this device should use — `npm run doctor` writes .dev-engine
+// when it proves the webpack engine is what survives (Turbopack native has
+// known issues on Android/Termux). No file = default (Turbopack).
+function devEngineFlag() {
+  try {
+    if (fs.readFileSync(path.join(ROOT, '.dev-engine'), 'utf8').trim() === 'webpack') return ['--webpack'];
+  } catch { /* default engine */ }
+  return [];
+}
+
+// Keeps the spawned server's stdin pipe open: a GC-closed pipe is an EOF for
+// the child, and a closed stdin is a classic clean-shutdown trigger.
+const PINNED_STDINS = new Set();
+const NEXT_CLI = path.join(ROOT, 'node_modules', 'next', 'dist', 'bin', 'next');
+
 function bootAndProbe(mode, port, cap, quiet) {
   return new Promise((resolve) => {
     let spawnEnv;
-    let cmd;
-    let args;
+    let nodeArgs;
+    let scriptArgs;
     let perAttemptMs;
     let deadlineMs;
     if (mode === 'prod') {
       spawnEnv = childEnv({ NODE_ENV: 'production', PORT: String(port), HOSTNAME: '127.0.0.1', NEXT_TELEMETRY_DISABLED: '1' });
-      cmd = process.execPath;
-      args = [path.join(ROOT, '.next', 'standalone', 'server.js')];
+      nodeArgs = ['--trace-exit'];
+      scriptArgs = [path.join(ROOT, '.next', 'standalone', 'server.js')];
       perAttemptMs = 10_000;
       deadlineMs = 90_000;
     } else {
       spawnEnv = childEnv({ NEXT_TELEMETRY_DISABLED: '1' });
-      cmd = localBin('next');
-      args = ['dev', '-p', String(port)];
+      nodeArgs = ['--trace-exit'];
+      scriptArgs = [NEXT_CLI, 'dev', '-p', String(port), ...devEngineFlag()];
       perAttemptMs = 60_000;
       deadlineMs = 300_000;
     }
     if (cap) spawnEnv.NODE_OPTIONS = `--max-old-space-size=${cap}`;
-    if (!quiet) console.log(`  boot  ${mode === 'prod' ? 'standalone production server' : 'next dev'} on :${port} (temporary — killed after the probe)`);
-    const child = spawn(cmd, args, {
-      cwd: ROOT, env: spawnEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    if (!quiet) console.log(`  boot  ${mode === 'prod' ? 'standalone production server' : `next dev${devEngineFlag().length ? ' (webpack)' : ''}`} on :${port} (temporary — killed after the probe)`);
+    const child = spawn(process.execPath, [...nodeArgs, ...scriptArgs], {
+      cwd: ROOT, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'], detached: true,
     });
+    if (child.stdin) { PINNED_STDINS.add(child.stdin); child.stdin.on('error', () => {}); }
     const logLines = [];
     child.stdout.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 60) logLines.shift(); });
     child.stderr.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 60) logLines.shift(); });
 
     const killTree = (sig) => {
+      try { child.stdin?.end(); } catch { /* already gone */ }
+      PINNED_STDINS.delete(child.stdin);
+      try { child.stdin?.destroy(); } catch { /* */ }
       try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } }
     };
     let exited = null; // { code, signal, message? } — signal !== null means an external killer
@@ -392,7 +431,17 @@ function bootAndProbe(mode, port, cap, quiet) {
           }
           const r = await fetchHealth(port, perAttemptMs);
           if (r.up) {
-            if (r.body?.ok) { ok(`health: db=up, version=${r.body.version} — the full chain (env -> db -> seed -> server) works`); resolve({ passed: true }); return; }
+            if (r.body?.ok) {
+              ok(`health: db=up, version=${r.body.version} — the full chain (env -> db -> seed -> server) works`);
+              // The temp server must die HERE: its open stdio pipes would keep
+              // this script's event loop alive and `npm run setup` would hang
+              // after the report even though every step succeeded.
+              killTree('SIGTERM');
+              await new Promise((res) => setTimeout(res, 2500));
+              if (!exited) { killTree('SIGKILL'); await new Promise((res) => setTimeout(res, 1000)); }
+              resolve({ passed: true });
+              return;
+            }
             killTree('SIGTERM');
             resolve({ passed: false, diedAs: `server answered but health reports db=down (${JSON.stringify(r.body)})`, tail });
             return;

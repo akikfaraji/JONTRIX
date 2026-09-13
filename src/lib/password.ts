@@ -2,8 +2,8 @@
 // Format: s2$N$r$p$salt_b64url$hash_b64url — everything needed to verify is
 // in the stored string; upgrades just rewrite it. No plaintext ever persists.
 
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import { randomBytes, scrypt, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
 
 const scryptAsync = promisify(scrypt) as (
   password: string | Buffer,

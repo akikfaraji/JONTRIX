@@ -1,7 +1,7 @@
 // Generator-pattern engines — VOL-11 §3: params → artifact via templating.
 // Deterministic: no wall-clock, no unseeded randomness in outputs.
 
-import { createHash } from 'node:crypto';
+import { createHash } from 'crypto';
 import type { JontEngine, JontResult } from '../types';
 import { fnv1a, seededShuffle, seededRandom, toCsv } from '../util';
 

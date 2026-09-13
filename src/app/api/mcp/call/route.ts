@@ -5,7 +5,7 @@
 // (mcp_usage_daily rollup + jont_usage ledger with source='mcp').
 // A failure at any stage never executes the tool.
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from 'crypto';
 import { requireMcpAuth } from '@/lib/mcp/auth';
 import { toolAllowed, aatDailyClamp } from '@/lib/mcp/scopes';
 import { resolveEntitlement, tierUnlocks, checkAndIncrement } from '@/lib/entitlements';

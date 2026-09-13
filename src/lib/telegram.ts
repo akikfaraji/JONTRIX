@@ -2,8 +2,8 @@
 // initData HMAC validation is the Mini App's only auth (no second system);
 // bot commands link the account by telegram id (first-login provisioning).
 
-import { createHmac } from 'node:crypto';
-import { randomBytes } from 'node:crypto';
+import { createHmac } from 'crypto';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 
 /**

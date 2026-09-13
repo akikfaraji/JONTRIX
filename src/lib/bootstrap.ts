@@ -9,7 +9,7 @@
 // queries throw. In that state `prisma db push` is executed once (it is
 // declarative and idempotent) before seeding.
 
-import { execSync } from 'node:child_process';
+import { execSync } from 'child_process';
 
 async function pushSchema(): Promise<boolean> {
   try {

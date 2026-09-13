@@ -5,7 +5,7 @@
 // Tool metadata derives from the same manifest source the dispatcher uses
 // (VOL-10 §1.1: never a second implementation of tool metadata).
 
-import { createHash } from 'node:crypto';
+import { createHash } from 'crypto';
 import { requireMcpAuth } from '@/lib/mcp/auth';
 import { toolAllowed } from '@/lib/mcp/scopes';
 import { resolveEntitlement, tierUnlocks } from '@/lib/entitlements';

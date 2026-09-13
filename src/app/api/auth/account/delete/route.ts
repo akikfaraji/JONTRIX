@@ -17,7 +17,7 @@
 // ledger's foreign keys keep resolving. A farewell/security email goes out
 // before anonymization (best-effort — deletion never depends on delivery).
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { ok, fail, ERR } from '@/lib/envelope';
 import { burstCheck } from '@/lib/burst';

@@ -3,7 +3,7 @@
 // gateway's memory: access 15 min, refresh 30 d rotating single-use.
 // Reuse of a rotated refresh revokes the whole family (theft signal).
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { sha256 } from '@/lib/tokens';
 import { scopeString } from '@/lib/mcp/scopes';

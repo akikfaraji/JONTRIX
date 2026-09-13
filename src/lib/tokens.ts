@@ -2,7 +2,7 @@
 // Secrets appear exactly once (the creation/rotation response); only the
 // SHA-256 hash, a display prefix, and the last4 are ever stored.
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'crypto';
 
 export type TokenKind = 'pat' | 'aat' | 'sess';
 

@@ -18,7 +18,7 @@
 // 10-min TTL, day-keyed lockouts. Expired rows purge opportunistically.
 
 import { cookies } from 'next/headers';
-import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { db } from '@/lib/db';
 import { sha256, randomSecret } from '@/lib/tokens';
 import { utcDay } from '@/lib/utc';
@@ -46,7 +46,7 @@ async function serverSecret(): Promise<string> {
     cachedSecret = process.env.AUTH_SECRET;
     return cachedSecret;
   }
-  const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
+  const { readFileSync, writeFileSync, existsSync } = await import('fs');
   const path = 'db/auth-secret';
   if (existsSync(path)) {
     cachedSecret = readFileSync(path, 'utf8').trim();

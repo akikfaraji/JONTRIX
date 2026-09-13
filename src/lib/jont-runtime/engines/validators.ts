@@ -1,7 +1,7 @@
 // Validator-pattern engines — VOL-11 §3: data + rule set → findings[];
 // findings carry row/field pointers. Deterministic rule evaluation only.
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import type { JontEngine, JontResult } from '../types';
 import { countPhrase, parseCsv } from '../util';
 

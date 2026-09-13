@@ -20,9 +20,13 @@
 //                   ports 3000/3100, oversized logs
 //   6. low-memory   writes a Node heap cap into .npmrc (node-options) when
 //                   MemAvailable is low — applies to every `npm run` script
-//   7. boot test    boots next dev on a free port WITH the heap cap and
-//                   captures the exit CODE+SIGNAL if it dies — SIGKILL on a
-//                   low-memory Android device pinpoints OOM / phantom killer
+//   7. boot test    boots next dev through a LADDER of configurations (dev-
+//                   like inherited stdin, pinned stdin, wiped cache, webpack
+//                   engine) — the first one that boots + answers /api/health
+//                   wins (a webpack win is pinned to .dev-engine so `npm run
+//                   dev` follows it). Every boot runs with Node --trace-exit:
+//                   a silent process.exit() prints the stack of its caller,
+//                   which is how a clean exit-0 death gets named and fixed.
 //
 // Usage:  npm run doctor                 diagnose + safe fixes + boot test
 //         npm run doctor -- --fix        also kill stray crashed processes,
@@ -126,6 +130,19 @@ function localBin(n) {
   return fs.existsSync(p) ? p : npmBin(n);
 }
 
+// Rewrite one KEY="value" line in an .env file in place (creates the line at
+// the end if the key is somehow absent). Used to repin DATABASE_URL.
+function rewriteEnvValue(envPath, key, value) {
+  try {
+    const text = fs.readFileSync(envPath, 'utf8');
+    const re = new RegExp(`^${key}\\s*=\\s*"?[^"\\n]*"?.*$`, 'm');
+    const updated = re.test(text)
+      ? text.replace(re, `${key}="${value}"`)
+      : `${text.replace(/\s*$/, '\n')}${key}="${value}"\n`;
+    fs.writeFileSync(envPath, updated, 'utf8');
+  } catch { /* .env missing — nothing to rewrite */ }
+}
+
 // ── 1. platform ──────────────────────────────────────────────────────────────
 
 const env = {};
@@ -168,6 +185,10 @@ function checkPlatform() {
       'Fix from a PC (or wireless adb): `adb shell device_config set_sync_disabled_for_tests persistent; ' +
       'adb shell device_config put activity_manager max_phantom_processes 2147483647; ' +
       'adb shell settings put global settings_enable_monitor_phantom_procs false`');
+  }
+
+  if (android.isAndroid) {
+    console.log('  note  Turbopack (the Next 16 default dev engine) has known trouble on Android/Termux — the boot test below also tries the webpack engine and pins it in .dev-engine if that is what survives.');
   }
 }
 
@@ -274,6 +295,9 @@ async function checkProject() {
   const envFile = parseEnvFile(path.join(ROOT, '.env'));
   const needKeys = ['DATABASE_URL', 'APP_ORIGIN'];
   for (const k of needKeys) (envFile[k] ? ok : fail)(`.env ${k}`, envFile[k] || 'MISSING');
+  if (envFile.APP_ORIGIN && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\/?$/i.test(envFile.APP_ORIGIN)) {
+    warn('.env APP_ORIGIN', `points at ${envFile.APP_ORIGIN} — sign-in/email links redirect there. For on-device testing set APP_ORIGIN="http://localhost:3000" in .env; set it to the public URL when you publish.`);
+  }
   if (!envFile.AUTH_SECRET) {
     const secretFile = path.join(ROOT, 'db', 'auth-secret');
     (fs.existsSync(secretFile) ? ok : warn)('signing secret', envFile.AUTH_SECRET ? 'AUTH_SECRET in .env' : (fs.existsSync(secretFile) ? 'auto-persisted at db/auth-secret' : 'neither AUTH_SECRET nor db/auth-secret — it will self-generate at first boot'));
@@ -285,6 +309,32 @@ async function checkProject() {
     let p = dbPath.slice('file:'.length).split('?')[0];
     if (!path.isAbsolute(p)) p = path.join(ROOT, 'prisma', p);
     dbPath = p;
+
+    // A DATABASE_URL pointing OUTSIDE this repo ships in clones (the tracked
+    // .env carries the absolute path of whatever machine last committed it).
+    // Repin into the repo and migrate the file, so the db lives with the app.
+    const inRepo = path.join(ROOT, 'db', 'jontrix.db');
+    if (path.isAbsolute(p) && p !== inRepo && !p.startsWith(ROOT + path.sep)) {
+      const wasUrl = dbPath;
+      if (fs.existsSync(p) && !fs.existsSync(inRepo)) {
+        fs.mkdirSync(path.dirname(inRepo), { recursive: true });
+        try { fs.renameSync(p, inRepo); } catch { fs.copyFileSync(p, inRepo); fs.rmSync(p, { force: true }); }
+        for (const suffix of ['-wal', '-shm', '-journal']) {
+          try { if (fs.existsSync(p + suffix)) fs.renameSync(p + suffix, inRepo + suffix); } catch { /* */ }
+        }
+        let dir = path.dirname(p);
+        for (let i = 0; i < 2 && dir !== path.parse(dir).root; i++) { try { fs.rmdirSync(dir); } catch { break; } dir = path.dirname(dir); }
+        fixed('sqlite file migrated into the repo', `${p} -> ${inRepo} (empty stray directories removed)`);
+      } else if (fs.existsSync(p)) {
+        warn('stray sqlite file', `${p} also exists — the repo copy at ${inRepo} is authoritative; delete the stray if unwanted`);
+      }
+      rewriteEnvValue(path.join(ROOT, '.env'), 'DATABASE_URL', `file:${inRepo}`);
+      envFile.DATABASE_URL = `file:${inRepo}`;
+      dbPath = envFile.DATABASE_URL;
+      fixed('.env DATABASE_URL repinned', `was ${wasUrl} — the tracked .env ships the absolute path of the machine that last committed it`);
+      p = inRepo;
+    }
+
     const parent = path.dirname(p);
     if (!fs.existsSync(parent)) { fs.mkdirSync(parent, { recursive: true }); fixed('db dir', `${parent} created (was missing — a fresh-clone publish killer)`); }
     (fs.existsSync(p) ? ok : warn)('sqlite file', `${p}${fs.existsSync(p) ? ` (${(fs.statSync(p).size / 1024).toFixed(0)} KB)` : ' — will be created on first boot/schema push'}`);
@@ -375,7 +425,93 @@ function applyLowMemoryFixes() {
   fixed(`heap cap ${cap} MB`, `written to .npmrc as node-options — every npm run script now boots with it (OOM during route compile was the likely killer)`);
 }
 
-// ── 7. boot test with signal forensics ───────────────────────────────────────
+// ── 7. boot test — configuration ladder with exit forensics ─────────────────
+//
+// The crash reported on Android/Termux was: "✓ Ready" then a silent exit with
+// code 0 — a VOLUNTARY shutdown, not a SIGKILL (OOM / the phantom-process
+// killer die by signal and are reported as such). Node's --trace-exit makes
+// any process.exit() print the full stack of its caller, so a death now names
+// itself. Each rung of the ladder changes exactly one variable; the first
+// rung that boots + answers /api/health wins, and a webpack win is pinned to
+// .dev-engine so `npm run dev` and the setup smoke test follow it.
+
+const PINNED_STDINS = new Set(); // keeps spawned stdin pipes open — a closed pipe is an EOF, and a closed stdin is a classic clean-shutdown trigger
+const NEXT_CLI = path.join(ROOT, 'node_modules', 'next', 'dist', 'bin', 'next');
+
+function killServerChild(child, sig = 'SIGTERM') {
+  try { child.stdin?.end(); } catch { /* already gone */ } // graceful EOF first
+  PINNED_STDINS.delete(child.stdin);
+  try { child.stdin?.destroy(); } catch { /* */ }
+  if (child.detached && child.pid) {
+    try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* gone */ } }
+  } else {
+    try { child.kill(sig); } catch { /* gone */ }
+  }
+}
+
+function bootOnce(port, childEnv, cfg, n) {
+  return new Promise((resolve) => {
+    console.log(`  boot  [${n}/${cfg.total}] ${cfg.label}`);
+    const stdio = cfg.stdin === 'inherit' ? ['inherit', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'];
+    const args = ['--trace-exit', NEXT_CLI, 'dev', '-p', String(port)];
+    if (cfg.engine === 'webpack') args.push('--webpack');
+    const child = spawn(process.execPath, args, { cwd: ROOT, env: childEnv, stdio, detached: cfg.detached });
+    if (child.stdin) { PINNED_STDINS.add(child.stdin); child.stdin.on('error', () => {}); }
+
+    const logLines = [];
+    const tap = (d) => { logLines.push(String(d)); if (logLines.length > 120) logLines.shift(); };
+    child.stdout.on('data', tap);
+    child.stderr.on('data', tap);
+    const logFile = path.join(ROOT, `.doctor-boot-${n}.log`); // *.log is gitignored; kept outside .next so cache wipes cannot erase evidence
+    let fileSink = null;
+    try { fileSink = fs.createWriteStream(logFile, { flags: 'a' }); } catch { /* best effort */ }
+    const sink = (d) => { try { fileSink?.write(d); } catch { /* */ } };
+    child.stdout.on('data', sink);
+    child.stderr.on('data', sink);
+
+    let exited = null; // {code, signal, message?} — signal !== null means an external killer
+    child.on('exit', (code, signal) => { exited ??= { code, signal }; });
+    child.on('error', (err) => { exited ??= { code: -1, signal: null, message: err.message }; });
+    const tail = () => logLines.join('').slice(-2400);
+    const diedAs = () => exited.message ? `spawn error: ${exited.message}` : exited.signal ? `signal ${exited.signal}` : `exit code ${exited.code}`;
+
+    (async () => {
+      const deadline = Date.now() + 180_000;
+      let healthyOnce = false;
+      try {
+        while (Date.now() < deadline) {
+          if (exited) {
+            killServerChild(child, 'SIGKILL');
+            try { fileSink?.end(); } catch { /* */ }
+            resolve({ passed: false, diedAs: diedAs(), tail, logFile });
+            return;
+          }
+          const r = await fetchHealth(port, 10_000);
+          if (r.up && r.body?.ok) {
+            if (!healthyOnce) {
+              healthyOnce = true;
+              ok(`first probe passed (db=up, v${r.body.version}) — holding 8 s to catch delayed kills`);
+              await new Promise((res) => setTimeout(res, 8000));
+              continue; // second probe proves survival
+            }
+            killServerChild(child);
+            await new Promise((res) => setTimeout(res, 2500));
+            if (!exited) { killServerChild(child, 'SIGKILL'); await new Promise((res) => setTimeout(res, 1000)); }
+            try { fileSink?.end(); } catch { /* */ }
+            resolve({ passed: true, tail, logFile });
+            return;
+          }
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+        killServerChild(child, 'SIGKILL');
+        resolve({ passed: false, diedAs: 'timeout (180 s, no healthy answer)', tail, logFile });
+      } catch (e) {
+        killServerChild(child, 'SIGKILL');
+        resolve({ passed: false, diedAs: `probe error: ${e?.message ?? e}`, tail, logFile });
+      }
+    })();
+  });
+}
 
 async function bootTest(dotEnvValues) {
   heading('live boot test (the crash reproducer)');
@@ -393,92 +529,44 @@ async function bootTest(dotEnvValues) {
   const cap = heapCapMB();
   if (cap) childEnv.NODE_OPTIONS = `--max-old-space-size=${cap}`;
 
-  const attempts = cap ? 2 : 1;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const result = await bootOnce(port, childEnv, attempt > 1);
-    if (result.passed) return true;
-    if (attempt < attempts) {
-      warn(`boot attempt ${attempt} died (${result.diedAs}) — retrying once with .next wiped and the heap cap enforced`);
-      try { fs.rmSync(path.join(ROOT, '.next'), { recursive: true, force: true }); } catch { /* */ }
-      childEnv.NODE_OPTIONS = `--max-old-space-size=${cap}`;
-    } else {
-      diagnoseDeath(result, cap);
-      return false;
-    }
-  }
-  return false;
-}
+  const ladder = [
+    { label: 'dev-like boot — stdin inherited from this terminal, foreground (what `npm run dev` sees)', engine: 'turbopack', stdin: 'inherit', detached: false },
+    { label: 'programmatic boot — stdin pinned open, detached (what the setup smoke test does)', engine: 'turbopack', stdin: 'pin', detached: true },
+    { label: 'programmatic boot after wiping the .next cache', engine: 'turbopack', stdin: 'pin', detached: true, wipe: true },
+    { label: 'webpack engine — bypasses Turbopack native, the known Android/Termux trouble spot', engine: 'webpack', stdin: 'pin', detached: true },
+  ];
+  for (const cfg of ladder) cfg.total = ladder.length;
 
-function bootOnce(port, childEnv, quiet) {
-  return new Promise((resolve) => {
-    if (!quiet) console.log(`  boot  next dev on :${port}${childEnv.NODE_OPTIONS ? ` (${childEnv.NODE_OPTIONS})` : ''} — will be killed after the probe`);
-    const child = spawn(localBin('next'), ['dev', '-p', String(port)], {
-      cwd: ROOT, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    });
-    const logLines = [];
-    child.stdout.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 80) logLines.shift(); });
-    child.stderr.on('data', (d) => { logLines.push(String(d)); if (logLines.length > 80) logLines.shift(); });
-
-    const killTree = (sig) => { try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch { /* */ } } };
-    let exited = null; // {code, signal, message?} — signal !== null means an external killer
-    child.on('exit', (code, signal) => { exited ??= { code, signal }; });
-    child.on('error', (err) => { exited ??= { code: -1, signal: null, message: err.message }; });
-
-    const tail = () => logLines.join('').slice(-2000);
-
-    (async () => {
-      const deadline = Date.now() + 300_000;
-      let healthyOnce = false;
-      try {
-        while (Date.now() < deadline) {
-          if (exited) { killTree('SIGKILL'); resolve({ passed: false, healthyOnce, diedAs: exited.message ? `spawn error: ${exited.message}` : exited.signal ? `signal ${exited.signal}` : `exit code ${exited.code}`, tail }); return; }
-          const r = await fetchHealth(port, 60_000); // generous: first compile on slow devices
-          if (r.up && r.body?.ok) {
-            if (!healthyOnce) {
-              healthyOnce = true;
-              if (!quiet) ok(`first probe passed (db=up, v${r.body.version}) — holding 8 s to catch delayed kills`);
-              await new Promise((res) => setTimeout(res, 8000));
-              continue; // second probe proves survival
-            }
-            killTree('SIGTERM');
-            await new Promise((res) => setTimeout(res, 3000));
-            if (!exited) { killTree('SIGKILL'); await new Promise((res) => setTimeout(res, 1500)); }
-            resolve({ passed: true, healthyOnce, diedAs: null, tail });
-            return;
-          }
-          await new Promise((res) => setTimeout(res, 1000));
-        }
-        killTree('SIGKILL');
-        resolve({ passed: false, healthyOnce, diedAs: 'timeout (300 s, no healthy answer)', tail });
-      } catch (e) {
-        killTree('SIGKILL');
-        resolve({ passed: false, healthyOnce, diedAs: `probe error: ${e?.message ?? e}`, tail });
+  for (let n = 0; n < ladder.length; n++) {
+    const cfg = ladder[n];
+    if (cfg.wipe) { try { fs.rmSync(path.join(ROOT, '.next'), { recursive: true, force: true }); } catch { /* */ } }
+    const result = await bootOnce(port, childEnv, cfg, n + 1);
+    if (result.passed) {
+      ok('boot test passed', `winning configuration: ${cfg.label}`);
+      if (cfg.engine === 'webpack') {
+        try { fs.writeFileSync(path.join(ROOT, '.dev-engine'), 'webpack\n', 'utf8'); } catch { /* */ }
+        fixed('dev engine pinned to webpack', 'wrote .dev-engine — `npm run dev` and the setup smoke test now boot with webpack on this device (delete the file to return to Turbopack)');
+      } else {
+        try { fs.rmSync(path.join(ROOT, '.dev-engine'), { force: true }); } catch { /* */ }
       }
-    })();
-  });
-}
-
-function diagnoseDeath(result, cap) {
-  const t = result.tail();
-  if (result.diedAs === 'signal SIGKILL') {
-    const mi = meminfo();
-    const availMB = (mi.MemAvailable ?? 0) / 1024;
-    if (android.isAndroid && (android.sdk == null || android.sdk >= 31)) {
-      fail('boot killed by SIGKILL', 'most likely the Android phantom-process killer (Turbopack spawns workers) or the OOM/low-memory killer. Apply the adb commands printed in the platform section above, free up RAM (see memory line above), then re-run.');
-    } else if (availMB < 1200) {
-      fail('boot killed by SIGKILL', `only ${availMB.toFixed(0)} MB available — OOM/low-memory killer. Heap cap (${cap ?? 'none'} MB) is applied; close background apps or add swap, then re-run.`);
-    } else {
-      fail('boot killed by SIGKILL', 'an external killer (OOM/phantom/security policy) took the server. Check: `dmesg | tail -30` for oom-kill lines, and whether a battery-optimizer app targets this process.');
+      for (let m = 1; m <= ladder.length; m++) { try { fs.rmSync(path.join(ROOT, `.doctor-boot-${m}.log`), { force: true }); } catch { /* */ } }
+      return true;
     }
-  } else if (/ENOSPC/i.test(t) && /inotify/i.test(t)) {
-    fail('boot died', 'inotify watch limit exhausted — see the inotify line above');
-  } else if (/EMFILE|too many open files/i.test(t)) {
-    fail('boot died', 'file-descriptor limit too low — run `ulimit -n 65536` before npm run dev (see nofile line above)');
-  } else {
-    fail('boot died', `${result.diedAs} — log tail:\n${t}`);
+    let hint = '';
+    if (result.diedAs === 'signal SIGKILL') {
+      hint = ' — an external killer (OOM / Android phantom-process killer): see the memory + platform sections above';
+    }
+    warn(`boot died [${n + 1}/${ladder.length}] — ${result.diedAs}`, `config was: ${cfg.label}${hint} — full log: ${result.logFile}`);
+    const t = result.tail();
+    if (/ENOSPC/i.test(t) && /inotify/i.test(t)) console.log('      hint: inotify watch limit exhausted — see the inotify line above');
+    else if (/EMFILE|too many open files/i.test(t)) console.log('      hint: file-descriptor limit too low — run `ulimit -n 65536` (see the nofile line above)');
+    if (/Exited the environment|process\.exit/i.test(t)) {
+      const stack = t.split('\n').filter((l) => /Exited the environment|at /.test(l)).slice(0, 10).map((s) => s.trim()).join('\n      ');
+      console.log(`      exit stack — who called process.exit():\n      ${stack}`);
+    }
   }
-  console.log('\n  The environment itself (steps 1-8 in npm run setup) is ready — only the live boot is failing.');
-  console.log('  Try `npm run dev` directly after applying the fixes above.');
+  fail('boot test', `all ${ladder.length} boot configurations died with this signature — the .doctor-boot-N.log files keep the complete output including the --trace-exit stack trace naming whatever called process.exit(). Paste the whole "live boot test" section back and the next fix targets it directly.`);
+  return false;
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -497,7 +585,8 @@ if (BOOT) bootOk = await bootTest(dotEnvValues);
 else { heading('live boot test'); console.log('  skip  (--no-boot-test)'); }
 
 console.log(`\n── verdict ${'─'.repeat(48)}`);
-console.log(`  ${counts.ok ?? 0} ok | ${counts.fix ?? 0} fixed | ${counts.warn ?? 0} warnings | ${counts.fail ?? 0} failures`);
+const failCount = counts.fail ?? 0;
+console.log(`  ${counts.ok ?? 0} ok | ${counts.fix ?? 0} fixed | ${counts.warn ?? 0} warnings | ${failCount} failure${failCount === 1 ? '' : 's'}`);
 if (android.isAndroid) {
   console.log('  Android reminders, in order of impact:');
   console.log('    1. keep >= 1.5 GB RAM free when running dev (the heap cap in .npmrc helps)');

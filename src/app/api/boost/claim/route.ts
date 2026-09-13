@@ -5,7 +5,7 @@
 // 429 boost_cap with honest copy. One grant per ad session id — a replayed
 // callback is refused by the unique ad_session_id in the ledger.
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { db } from '@/lib/db';
 import { getSessionAuth } from '@/lib/auth';
 import { ok, fail, ERR } from '@/lib/envelope';

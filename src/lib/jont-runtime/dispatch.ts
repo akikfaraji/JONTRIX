@@ -220,7 +220,7 @@ export async function dispatchServerJont(
     // (6) inline vs stored handle
     let stored_ref: string | null = null;
     if (bytesOut > INLINE_LIMIT_BYTES) {
-      const { createHash } = await import('node:crypto');
+      const { createHash } = await import('crypto');
       const bodyText = stableStringify(result.data);
       const row2 = await db.result.create({
         data: {

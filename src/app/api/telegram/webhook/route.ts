@@ -3,7 +3,7 @@
 // by update_id (KvState TTL 7 days, ENV-1 pattern). Every reply is a direct
 // response to an update — this route never initiates messages (C8).
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { db } from '@/lib/db';
 import { handleUpdate, type TgUpdate } from '@/lib/bot/commands';
 import { telegramBotToken } from '@/lib/telegram';

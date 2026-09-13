@@ -3,7 +3,7 @@
 // user_code (JX-XXXX-XXXX from a 31-char unambiguous set). 20/min/IP.
 // Codes expire at expires_in exactly (900 s).
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { sha256 } from '@/lib/tokens';
 import { ipLimit, clientIp } from '@/lib/mcp/ratelimit';

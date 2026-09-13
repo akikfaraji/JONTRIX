@@ -3,7 +3,7 @@
 // enforced on read. Issue purges prior unused tokens of the same purpose
 // (one live token per purpose per user — no mailbox token stuffing).
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { sha256 } from '@/lib/tokens';
 

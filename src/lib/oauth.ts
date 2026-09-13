@@ -4,7 +4,7 @@
 // JONTRIX account (OTP login or prior verification proves ownership);
 // otherwise it refuses honestly — no account takeover via unverified email.
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { sha256, randomSecret } from '@/lib/tokens';
 
