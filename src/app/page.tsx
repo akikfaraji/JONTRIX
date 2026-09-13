@@ -70,6 +70,7 @@ function PageBody() {
               related={related}
               onBack={() => setTool(null)}
               onOpenTool={openTool}
+              onNeedSignIn={() => setSignInOpen(true)}
             />
           ) : (
             <ToolsView onOpenTool={openTool} />

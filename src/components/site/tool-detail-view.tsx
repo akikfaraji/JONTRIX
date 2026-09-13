@@ -39,11 +39,13 @@ export function ToolDetailView({
   related,
   onBack,
   onOpenTool,
+  onNeedSignIn,
 }: {
   tool: JontRecord;
   related: JontRecord[];
   onBack: () => void;
   onOpenTool: (j: JontRecord) => void;
+  onNeedSignIn?: () => void;
 }) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -75,7 +77,7 @@ export function ToolDetailView({
 
         <Card className="border">
           <CardContent className="p-5">
-            <RunPanel tool={tool} />
+            <RunPanel tool={tool} onNeedSignIn={onNeedSignIn} />
             <Separator className="my-4" />
             <div className="grid gap-2 text-sm">
               <div className="flex items-center justify-between gap-2">

@@ -484,7 +484,15 @@ interface CronMatch {
 
 /** Deterministic subset grammar — honest refusal outside it (C5: never guess). */
 export function phraseToCron(phraseRaw: string): CronMatch | null {
-  const p = phraseRaw.trim().toLowerCase().replace(/\s+/g, ' ');
+  let p = phraseRaw.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // am/pm normalization — users type meridiems constantly ("9am", "5:30pm").
+  // "12am" -> 0:00, "12pm" -> 12:00; everything downstream reads 24h only.
+  p = p.replace(/(\d{1,2})(?::(\d{2}))?\s*((?:a\.?m\.?|p\.?m\.?))(?![a-z])/g, (_match: string, h: string, min: string | undefined, ap: string) => {
+    let hh = Number(h) % 12;
+    if (ap.startsWith('p')) hh += 12;
+    return `${hh}:${min ?? '00'}`;
+  });
 
   // every N minutes
   let m = /^(?:every|each) (\d+) minutes?(?:,.*)?$/.exec(p);
@@ -536,9 +544,9 @@ export function phraseToCron(phraseRaw: string): CronMatch | null {
   }
   // every minute
   if (/^(?:every minute|each minute)$/.test(p)) return { cron: '* * * * *', human: 'every minute' };
-  // midnight / noon
-  if (/^at midnight$/.test(p)) return { cron: '0 0 * * *', human: 'daily at 00:00' };
-  if (/^at noon$/.test(p)) return { cron: '0 12 * * *', human: 'daily at 12:00' };
+  // midnight / noon (bare, "at X", "daily at X")
+  if (/^(?:at |daily at |every day at )?noon$/.test(p)) return { cron: '0 12 * * *', human: 'daily at 12:00' };
+  if (/^(?:at |daily at |every day at )?midnight$/.test(p)) return { cron: '0 0 * * *', human: 'daily at 00:00' };
   return null;
 }
 
@@ -548,7 +556,7 @@ export const naturalLanguageToCron: JontEngine = {
     pattern: 'converter',
     context: 'server',
     io: {
-      input: { type: 'object', required: ['phrase'], properties: { phrase: { type: 'string', description: 'schedule phrase, e.g. "every 5 minutes", "daily at 9", "weekdays at 8:30"' } } },
+      input: { type: 'object', required: ['phrase'], properties: { phrase: { type: 'string', description: 'schedule phrase, e.g. "every 5 minutes", "daily at 9", "weekdays at 8:30", "every monday at 9am" (am/pm accepted)' } } },
       output: { type: 'object' },
     },
     tier_fit: 'FREE',

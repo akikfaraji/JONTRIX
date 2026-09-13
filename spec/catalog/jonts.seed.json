@@ -110,7 +110,7 @@
   "seo": {
    "slug": "leading-zero-date-guard",
    "canonical": "/jonts/leading-zero-date-guard/",
-   "description": "Leading-Zero & Date Guard (CSV open protector)"
+   "description": "Stops Excel from eating leading zeros and reformatting dates — generates import-safe CSVs where IDs like 00123 survive."
   },
   "faq": [
    [
@@ -142,7 +142,7 @@
   "seo": {
    "slug": "cors-echo-diagnose",
    "canonical": "/jonts/cors-echo-diagnose/",
-   "description": "CORS errors remain a top chronic frustration — devs don't understand why requests fail and the error masks ..."
+   "description": "Echoes your request back with the exact headers it received, plus the CORS headers a browser would need — so you can see which side is misconfigured."
   },
   "faq": [
    [
@@ -174,7 +174,7 @@
   "seo": {
    "slug": "csv-column-split-repair",
    "canonical": "/jonts/csv-column-split-repair/",
-   "description": "CSVs open with all data in one column or split wrongly because the delimiter is comma vs semicolon (Europea..."
+   "description": "Fixes CSVs where columns collapsed into one or split wrongly — re-splits by the actual delimiter and re-aligns rows."
   },
   "faq": [
    [
@@ -206,7 +206,7 @@
   "seo": {
    "slug": "json-repair",
    "canonical": "/jonts/json-repair/",
-   "description": "JSON Repair / Error Fixer"
+   "description": "Fixes broken JSON — trailing commas, single quotes, unquoted keys, smart quotes — and lists every change it made so you can trust the output."
   },
   "faq": [
    [
@@ -270,7 +270,7 @@
   "seo": {
    "slug": "exam-question-bank-builder",
    "canonical": "/jonts/exam-question-bank-builder/",
-   "description": "BCS & competitive-exam prep: question banks exist, access costs"
+   "description": "Organizes questions into a tagged, filterable bank with difficulty and topic fields, exported in a format exam tools accept."
   },
   "faq": [
    [
@@ -302,7 +302,7 @@
   "seo": {
    "slug": "curl-to-code",
    "canonical": "/jonts/curl-to-code/",
-   "description": "Converting curl commands (copied from docs/DevTools) into Python/JS/PHP code is a standing need — proven by..."
+   "description": "Converts a curl command into ready-to-run code for Python, JavaScript (fetch/axios) or PHP — headers and auth included."
   },
   "faq": [
    [
@@ -366,7 +366,7 @@
   "seo": {
    "slug": "big-json-splitter-viewer",
    "canonical": "/jonts/big-json-splitter-viewer/",
-   "description": "Multi-hundred-MB/GB JSON & JSONL files crash or freeze editors (VS Code 5MB JSON mode limit; 700MB jsonline..."
+   "description": "Opens JSON files too big for a text editor, previews the structure, and splits them into chunks on demand."
   },
   "faq": [
    [
@@ -430,7 +430,7 @@
   "seo": {
    "slug": "citation-verifier",
    "canonical": "/jonts/citation-verifier/",
-   "description": "Hallucinated citations — verifying AI-generated references"
+   "description": "Checks citations in a text for formatting problems and missing pieces — authors, years, URLs — against common styles."
   },
   "faq": [
    [
@@ -462,7 +462,7 @@
   "seo": {
    "slug": "csv-splitter",
    "canonical": "/jonts/csv-splitter/",
-   "description": "CSV Splitter (rows / file size)"
+   "description": "Splits a large CSV into smaller files by row count, keeping the header row on every part."
   },
   "faq": [
    [
@@ -526,7 +526,7 @@
   "seo": {
    "slug": "big-json-viewer-query",
    "canonical": "/jonts/big-json-viewer-query/",
-   "description": "JSON viewers/editors crash or freeze on large (100MB–1GB+) JSON files, so devs fall back to command-line jq..."
+   "description": "Filters huge JSON files with JSONPath-style queries without loading the whole file into memory."
   },
   "faq": [
    [
@@ -590,7 +590,7 @@
   "seo": {
    "slug": "whatsapp-order-parser",
    "canonical": "/jonts/whatsapp-order-parser/",
-   "description": "WhatsApp-order chaos: sellers take 20–30 orders/day as chat messages; tracking in notebook/Excel/memory; no..."
+   "description": "Parses order details from WhatsApp chats — items, quantities, addresses — into a clean orders table."
   },
   "faq": [
    [
@@ -622,7 +622,7 @@
   "seo": {
    "slug": "ai-provenance-report",
    "canonical": "/jonts/ai-provenance-report/",
-   "description": "AI-detector false positives — students need a provenance trail"
+   "description": "Reads EXIF, XMP and C2PA metadata from a file and reports what it says about how the file was created or edited."
   },
   "faq": [
    [
@@ -654,7 +654,7 @@
   "seo": {
    "slug": "shopify-csv-preflight",
    "canonical": "/jonts/shopify-csv-preflight/",
-   "description": "Shopify rejects CSVs for invisible format reasons: non-UTF-8 encoding, illegal characters, wrong quoting — ..."
+   "description": "Validates Shopify product and import CSVs in the browser — required columns, variant structure, image URL formats."
   },
   "faq": [
    [
@@ -782,7 +782,7 @@
   "seo": {
    "slug": "file-safety-scanner",
    "canonical": "/jonts/file-safety-scanner/",
-   "description": "Users are now *afraid* of free online converters — FBI + Malwarebytes confirm converter sites push malware/..."
+   "description": "Scans a file for common hazards before you open or share it — macros, embedded scripts, mismatched extensions."
   },
   "faq": [
    [
@@ -814,7 +814,7 @@
   "seo": {
    "slug": "sql-dialect-migrator",
    "canonical": "/jonts/sql-dialect-migrator/",
-   "description": "MySQL→PostgreSQL (and reverse) migrations require manual SQL dialect rewrites — type mappings, quote styles..."
+   "description": "Converts SQL between dialects — MySQL, PostgreSQL, SQLite, T-SQL — and flags constructs with no direct equivalent."
   },
   "faq": [
    [
@@ -846,7 +846,7 @@
   "seo": {
    "slug": "json-to-csv-flatten",
    "canonical": "/jonts/json-to-csv-flatten/",
-   "description": "JSON to CSV (flatten, arrays-safe)"
+   "description": "Flattens nested JSON arrays into flat CSV rows, choosing which fields become columns."
   },
   "faq": [
    [
@@ -878,7 +878,7 @@
   "seo": {
    "slug": "universal-csv-pre-flight-validator",
    "canonical": "/jonts/universal-csv-pre-flight-validator/",
-   "description": "Universal CSV Pre-flight Validator"
+   "description": "Checks any CSV against a ruleset you define — column names, types, ranges, required fields — before it reaches your importer."
   },
   "faq": [
    [
@@ -910,7 +910,7 @@
   "seo": {
    "slug": "shopify-product-csv-preflight",
    "canonical": "/jonts/shopify-product-csv-preflight/",
-   "description": "Shopify Product CSV Pre-flight Validator"
+   "description": "Checks a Shopify product CSV against the import spec and reports every row that would fail — before you upload it."
   },
   "faq": [
    [
@@ -1006,7 +1006,7 @@
   "seo": {
    "slug": "excel-import-guard",
    "canonical": "/jonts/excel-import-guard/",
-   "description": "Excel silently truncates/mangles big CSVs and strips leading zeros + rewrites dates, so re-imports into oth..."
+   "description": "Pre-checks a CSV against Excel's import quirks — date mangling, scientific notation, encoding — and fixes what would break."
   },
   "faq": [
    [
@@ -1070,7 +1070,7 @@
   "seo": {
    "slug": "csv-delimiter-fixer",
    "canonical": "/jonts/csv-delimiter-fixer/",
-   "description": "CSV Delimiter Fixer"
+   "description": "Detects and repairs wrong delimiters — comma vs semicolon vs tab — and re-quotes fields where needed."
   },
   "faq": [
    [
@@ -1102,7 +1102,7 @@
   "seo": {
    "slug": "llm-json-cleaner",
    "canonical": "/jonts/llm-json-cleaner/",
-   "description": "LLM-generated and human-edited JSON breaks parsers on trailing commas, single quotes, comments, unquoted ke..."
+   "description": "Repairs JSON from LLM outputs — markdown fences, trailing commas, comments, truncated lines — into parseable form."
   },
   "faq": [
    [
@@ -1166,7 +1166,7 @@
   "seo": {
    "slug": "duplicate-row-finder",
    "canonical": "/jonts/duplicate-row-finder/",
-   "description": "Duplicate Row Finder (exact + fuzzy)"
+   "description": "Finds duplicate rows in a CSV by the columns you choose, with exact and fuzzy matching, and shows every duplicate group."
   },
   "faq": [
    [
@@ -1326,7 +1326,7 @@
   "seo": {
    "slug": "csv-encoding-converter",
    "canonical": "/jonts/csv-encoding-converter/",
-   "description": "CSV Encoding Converter (UTF-8/GBK/1252)"
+   "description": "Converts CSV files between encodings (UTF-8, Latin-1, Windows-1252) and fixes the mojibake Excel exports leave behind."
   },
   "faq": [
    [
@@ -1422,7 +1422,7 @@
   "seo": {
    "slug": "study-deck-converter",
    "canonical": "/jonts/study-deck-converter/",
-   "description": "Quizlet paywall betrayal — teachers can't assign study modes anymore"
+   "description": "Converts notes and tables into flashcard decks — Anki- and Quizlet-compatible CSV with front, back and tags columns sorted out."
   },
   "faq": [
    [
@@ -1454,7 +1454,7 @@
   "seo": {
    "slug": "csv-to-json",
    "canonical": "/jonts/csv-to-json/",
-   "description": "CSV to JSON"
+   "description": "Converts CSV to JSON in your browser, with type inference for numbers and booleans and an option to nest dotted headers."
   },
   "faq": [
    [
@@ -1518,7 +1518,7 @@
   "seo": {
    "slug": "ai-text-de-slopper",
    "canonical": "/jonts/ai-text-de-slopper/",
-   "description": "De-slopping AI text (writers/marketers)"
+   "description": "Rewrites AI-assisted drafts into plain prose: strips filler phrases, em-dash spam, and the stock patterns that make text read as generated."
   },
   "faq": [
    [
@@ -1550,7 +1550,7 @@
   "seo": {
    "slug": "nested-json-csv",
    "canonical": "/jonts/nested-json-csv/",
-   "description": "JSON↔CSV conversion of nested data is \"almost impossible\" for practitioners — array-of-struct nesting flatt..."
+   "description": "Converts deeply nested JSON to CSV and back, expanding and collapsing paths with dot notation."
   },
   "faq": [
    [
@@ -1640,7 +1640,7 @@
   "context": "client",
   "tier_fit": "FREE",
   "platform_role": "HOOK",
-  "score": 7.0,
+  "score": 7,
   "mcp_exposed": true,
   "context_note": null,
   "seo": {
@@ -1672,13 +1672,13 @@
   "context": "server",
   "tier_fit": "PRO",
   "platform_role": "LTV",
-  "score": 7.0,
+  "score": 7,
   "mcp_exposed": true,
   "context_note": null,
   "seo": {
    "slug": "amazon-flat-file-pre-flight",
    "canonical": "/jonts/amazon-flat-file-pre-flight/",
-   "description": "Amazon Flat File Pre-flight (8541 etc.)"
+   "description": "Validates Amazon flat files against category templates before upload — required fields, value formats, and the errors Seller Central reports too late."
   },
   "faq": [
    [
@@ -1742,7 +1742,7 @@
   "seo": {
    "slug": "json-jsonl-converter",
    "canonical": "/jonts/json-jsonl-converter/",
-   "description": "JSON ↔ JSONL (JSON Lines) conversion confusion — devs routinely ask how to convert arrays to JSONL and back..."
+   "description": "Converts between pretty JSON and JSON Lines (one object per line) — the format log pipelines and stream tools expect."
   },
   "faq": [
    [
@@ -1774,7 +1774,7 @@
   "seo": {
    "slug": "json-formatter-validator",
    "canonical": "/jonts/json-formatter-validator/",
-   "description": "JSON Formatter & Validator"
+   "description": "Formats and validates JSON with exact error positions — line and column, not just 'unexpected token'."
   },
   "faq": [
    [
@@ -1838,7 +1838,7 @@
   "seo": {
    "slug": "spreadsheets",
    "canonical": "/jonts/spreadsheets/",
-   "description": "Spreadsheets-as-products: people repeatedly ask \"how do I build X in Excel/Sheets\" — and PAY for templates"
+   "description": "Generates starter spreadsheets from templates — inventory, invoice lines, budgets, attendance — ready to download as CSV."
   },
   "faq": [
    [
@@ -1902,7 +1902,7 @@
   "seo": {
    "slug": "telegram-mini-app-shell",
    "canonical": "/jonts/telegram-mini-app-shell/",
-   "description": "Telegram Mini App Shell (Stars-native checkout)"
+   "description": "Generates a ready-to-deploy Telegram Mini App starter with init-data validation wired for your bot token."
   },
   "faq": [
    [
@@ -1998,7 +1998,7 @@
   "seo": {
    "slug": "gig-driver-expense-tracker",
    "canonical": "/jonts/gig-driver-expense-tracker/",
-   "description": "Gig-driver income/expense/mileage tracking"
+   "description": "Turns rideshare and delivery trip logs into a categorized expense ledger with per-mile deductions, exportable for tax filing."
   },
   "faq": [
    [
@@ -2030,7 +2030,7 @@
   "seo": {
    "slug": "json-diff-checker",
    "canonical": "/jonts/json-diff-checker/",
-   "description": "JSON Diff Checker"
+   "description": "Compares two JSON documents and shows added, removed and changed paths side by side."
   },
   "faq": [
    [
@@ -2062,7 +2062,7 @@
   "seo": {
    "slug": "json-to-typescript-go",
    "canonical": "/jonts/json-to-typescript-go/",
-   "description": "JSON to TypeScript / Go / Java Types"
+   "description": "Generates TypeScript interfaces or Go structs from a JSON sample, with nullable and array fields handled."
   },
   "faq": [
    [
@@ -2158,7 +2158,7 @@
   "seo": {
    "slug": "csv-merger",
    "canonical": "/jonts/csv-merger/",
-   "description": "CSV Merger / Concatenator"
+   "description": "Merges multiple CSVs into one, aligning columns by header name instead of position."
   },
   "faq": [
    [
@@ -2190,7 +2190,7 @@
   "seo": {
    "slug": "subtitle-sync-offset-fixer",
    "canonical": "/jonts/subtitle-sync-offset-fixer/",
-   "description": "Downloaded subtitles are out of sync by a fixed offset (or drift due to FPS mismatch) and casual users can'..."
+   "description": "Shifts SRT/ASS subtitle timings by a constant offset or scales them, re-syncing subs to your video."
   },
   "faq": [
    [
@@ -2414,7 +2414,7 @@
   "seo": {
    "slug": "landlord-rent-ledgers",
    "canonical": "/jonts/landlord-rent-ledgers/",
-   "description": "Landlord rent ledgers — especially IRREGULAR payments"
+   "description": "Builds rent ledgers per unit and tenant — payments, late fees, balances — with month-by-month statements."
   },
   "faq": [
    [
@@ -2446,7 +2446,7 @@
   "seo": {
    "slug": "csv-cleaner",
    "canonical": "/jonts/csv-cleaner/",
-   "description": "CSV Cleaner (trim/quotes/blank rows)"
+   "description": "Cleans messy CSVs: trims whitespace, normalizes headers, drops empty rows and columns."
   },
   "faq": [
    [
@@ -2638,7 +2638,7 @@
   "seo": {
    "slug": "wedding-guest-list-planner",
    "canonical": "/jonts/wedding-guest-list-planner/",
-   "description": "Wedding planning spreadsheets (guest list hell)"
+   "description": "Tracks guests, RSVPs, dietary needs and plus-ones in one table, with live counts and seat-list exports."
   },
   "faq": [
    [
@@ -2990,7 +2990,7 @@
   "seo": {
    "slug": "cryptic-api-error-responses-cost-hours",
    "canonical": "/jonts/cryptic-api-error-responses-cost-hours/",
-   "description": "Cryptic API error responses cost hours — teams build tribal knowledge around undocumented 4xx/5xx bodies."
+   "description": "Paste a raw HTTP error — status, headers, body — and get a plain-language reading of what failed, common causes, and what to check first."
   },
   "faq": [
    [
@@ -3598,7 +3598,7 @@
   "seo": {
    "slug": "citation-formatter",
    "canonical": "/jonts/citation-formatter/",
-   "description": "Citation Formatter (APA/MLA, no-signup)"
+   "description": "Turns raw references into consistent citations — pick a style, paste the sources, get clean APA, MLA or Chicago output."
   },
   "faq": [
    [
@@ -3790,7 +3790,7 @@
   "seo": {
    "slug": "flashcard-data-portability",
    "canonical": "/jonts/flashcard-data-portability/",
-   "description": "Flashcard data portability — getting sets OUT of Quizlet"
+   "description": "Converts flashcard exports between Anki, Quizlet and CSV formats, keeping front, back and tag fields aligned."
   },
   "faq": [
    [
@@ -3950,7 +3950,7 @@
   "seo": {
    "slug": "spreadsheet",
    "canonical": "/jonts/spreadsheet/",
-   "description": "Spreadsheet-as-order/inventory-system ceiling: tiny sellers run entire ops on Excel/Google Sheets until it ..."
+   "description": "Reshapes table data — transpose, sort, dedupe, split or merge columns — a dozen operations on pasted CSV, no formulas needed."
   },
   "faq": [
    [
@@ -3982,7 +3982,7 @@
   "seo": {
    "slug": "worksheet-rubric-generation-for-teachers",
    "canonical": "/jonts/worksheet-rubric-generation-for-teachers/",
-   "description": "Worksheet / rubric generation for teachers"
+   "description": "Builds worksheets and grading rubrics from a topic and grade level — editable text you can print or paste into your docs."
   },
   "faq": [
    [
@@ -4142,7 +4142,7 @@
   "seo": {
    "slug": "google-merchant-feed-fixer",
    "canonical": "/jonts/google-merchant-feed-fixer/",
-   "description": "Google Merchant Feed Fixer"
+   "description": "Validates and repairs Google Merchant Center product feeds before upload — missing required attributes, wrong formats, invalid prices."
   },
   "faq": [
    [
@@ -4430,7 +4430,7 @@
   "seo": {
    "slug": "static-json-mock-api-server",
    "canonical": "/jonts/static-json-mock-api-server/",
-   "description": "Static JSON Mock API Server"
+   "description": "Turns a JSON file into a mock REST API spec with deterministic routes, so frontend work can start before the backend exists."
   },
   "faq": [
    [
@@ -4878,7 +4878,7 @@
   "seo": {
    "slug": "webhook-replay-tool",
    "canonical": "/jonts/webhook-replay-tool/",
-   "description": "Webhook Replay Tool"
+   "description": "Captures a webhook payload and replays it against a new endpoint with the original headers, so you can debug handlers without waiting on the provider."
   },
   "faq": [
    [
@@ -5358,7 +5358,7 @@
   "seo": {
    "slug": "chatgpt-conversation-export-backup-mess",
    "canonical": "/jonts/chatgpt-conversation-export-backup-mess/",
-   "description": "ChatGPT conversation export / backup mess"
+   "description": "Parses a ChatGPT conversations.json backup into readable per-conversation text and markdown files, indexed by date and title."
   },
   "faq": [
    [
@@ -5384,7 +5384,7 @@
   "context": "client",
   "tier_fit": "FREE",
   "platform_role": "GLUE",
-  "score": 6.0,
+  "score": 6,
   "mcp_exposed": true,
   "context_note": null,
   "seo": {
@@ -5416,7 +5416,7 @@
   "context": "client",
   "tier_fit": "FREE",
   "platform_role": "GLUE",
-  "score": 6.0,
+  "score": 6,
   "mcp_exposed": true,
   "context_note": null,
   "seo": {
@@ -5448,13 +5448,13 @@
   "context": "server",
   "tier_fit": "PRO",
   "platform_role": "PRO",
-  "score": 6.0,
+  "score": 6,
   "mcp_exposed": true,
   "context_note": null,
   "seo": {
    "slug": "ai-code-review-linter",
    "canonical": "/jonts/ai-code-review-linter/",
-   "description": "AI Code Review Linter (pre-PR check)"
+   "description": "Reviews code for real defects — unsafe patterns, dead branches, inconsistent error handling — and comments each finding with a suggested fix."
   },
   "faq": [
    [
@@ -5518,7 +5518,7 @@
   "seo": {
    "slug": "seating-charts-random-group-makers",
    "canonical": "/jonts/seating-charts-random-group-makers/",
-   "description": "Seating charts / random group makers"
+   "description": "Makes classroom seating charts or random groups from a student list, with avoid-pair constraints and group sizes."
   },
   "faq": [
    [
@@ -6158,7 +6158,7 @@
   "seo": {
    "slug": "mcp-server-config-validator",
    "canonical": "/jonts/mcp-server-config-validator/",
-   "description": "MCP Server Config Validator"
+   "description": "Validates an MCP server configuration file — schema errors, missing fields, bad commands — before your agent fails to start."
   },
   "faq": [
    [
@@ -6414,7 +6414,7 @@
   "seo": {
    "slug": "quiz-generator-from-notes",
    "canonical": "/jonts/quiz-generator-from-notes/",
-   "description": "Quiz Generator from Notes (AI)"
+   "description": "Turns study notes into multiple-choice or short-answer quizzes with answer keys — several question types from one paste."
   },
   "faq": [
    [
@@ -6478,7 +6478,7 @@
   "seo": {
    "slug": "sql-query-explainer",
    "canonical": "/jonts/sql-query-explainer/",
-   "description": "SQL Query Explainer (AI)"
+   "description": "Explains a SQL query clause by clause in plain language, and flags pitfalls like SELECT *, implicit joins, and DELETE without WHERE."
   },
   "faq": [
    [
@@ -6734,7 +6734,7 @@
   "seo": {
    "slug": "ai-slop-text-linter",
    "canonical": "/jonts/ai-slop-text-linter/",
-   "description": "AI-slop Text Linter"
+   "description": "Scans text for the stock phrases and structural tics common in generated writing and flags each hit with its location."
   },
   "faq": [
    [
@@ -7086,7 +7086,7 @@
   "seo": {
    "slug": "telegram-group-export-analyzer",
    "canonical": "/jonts/telegram-group-export-analyzer/",
-   "description": "Telegram Group Export Analyzer"
+   "description": "Analyzes a Telegram group export: activity by member and hour, top links, and message volume over time."
   },
   "faq": [
    [
@@ -7150,7 +7150,7 @@
   "seo": {
    "slug": "jwt-decoder-verifier",
    "canonical": "/jonts/jwt-decoder-verifier/",
-   "description": "JWT debugging (decode/verify/expiry checks) — fully saturated: jwt.io plus at least 4 clones (token.dev, jw..."
+   "description": "Decodes a JWT's header and payload, checks structure and expiry, and verifies the signature when you supply the secret or public key."
   },
   "faq": [
    [
@@ -7310,7 +7310,7 @@
   "seo": {
    "slug": "sports-league-scheduling-for-volunteers",
    "canonical": "/jonts/sports-league-scheduling-for-volunteers/",
-   "description": "Sports league scheduling for volunteers"
+   "description": "Generates round-robin schedules for any number of teams, courts and byes — fair rest time, printable tables."
   },
   "faq": [
    [
@@ -7534,7 +7534,7 @@
   "seo": {
    "slug": "changelog-generator-from-git-log",
    "canonical": "/jonts/changelog-generator-from-git-log/",
-   "description": "Changelog Generator from git log"
+   "description": "Turns git log output into a grouped changelog by version or date, with breaking changes and fixes sorted out."
   },
   "faq": [
    [
@@ -7656,7 +7656,7 @@
   "context": "client",
   "tier_fit": "FREE",
   "platform_role": "GLUE",
-  "score": 5.0,
+  "score": 5,
   "mcp_exposed": true,
   "context_note": null,
   "seo": {
@@ -7854,7 +7854,7 @@
   "seo": {
    "slug": "natural-language-to-cron",
    "canonical": "/jonts/natural-language-to-cron/",
-   "description": "Natural Language to Cron (AI)"
+   "description": "Converts schedule phrases like 'every monday at 9am' into cron expressions, echoing back what it understood in plain language."
   },
   "faq": [
    [

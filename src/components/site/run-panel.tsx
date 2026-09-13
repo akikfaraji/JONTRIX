@@ -58,7 +58,7 @@ function seedFromSchema(schema: InputSchema | null): Record<string, unknown> {
   return seed;
 }
 
-export function RunPanel({ tool }: { tool: JontRecord }) {
+export function RunPanel({ tool, onNeedSignIn }: { tool: JontRecord; onNeedSignIn?: () => void }) {
   const clientEngine = getClientEngine(tool.id);
   const [status, setStatus] = useState<string | null>(null);
   const [schema, setSchema] = useState<InputSchema | null>(null);
@@ -320,7 +320,7 @@ export function RunPanel({ tool }: { tool: JontRecord }) {
         Run
       </Button>
 
-      {outcome && <OutcomeView outcome={outcome} toolSlug={tool.slug} />}
+      {outcome && <OutcomeView outcome={outcome} toolSlug={tool.slug} onNeedSignIn={onNeedSignIn} />}
     </div>
   );
 }
@@ -365,8 +365,22 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
   );
 }
 
-function OutcomeView({ outcome, toolSlug }: { outcome: RunOutcome; toolSlug: string }) {
+function OutcomeView({ outcome, toolSlug, onNeedSignIn }: { outcome: RunOutcome; toolSlug: string; onNeedSignIn?: () => void }) {
   if (!outcome.ok || !outcome.result) {
+    if (outcome.error?.code === 'AUTH_REQUIRED' && onNeedSignIn) {
+      return (
+        <div className="rounded-md border p-3 text-xs leading-relaxed" role="alert">
+          <p className="font-medium">Sign in to run this tool</p>
+          <p className="mt-1 text-muted-foreground">
+            Server tools run under your account so daily usage stays metered and fair.
+          </p>
+          <Button size="sm" className="mt-2" onClick={onNeedSignIn}>
+            <PlayCircle className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            Sign in
+          </Button>
+        </div>
+      );
+    }
     return (
       <div className="rounded-md border p-3 text-xs leading-relaxed" role="alert">
         <p className="font-medium">{outcome.error?.code ?? 'RUN_FAILED'}</p>
